@@ -1,0 +1,29 @@
+node_modules/
+.tools/
+dist/
+data/
+.runtime/
+.qa/
+backups/
+*.log
+.env
+.env.*
+!.env.example
+coverage/
+
+# Household databases, media, certificates and secrets must stay local,
+# even when a custom data directory is placed inside the checkout.
+media/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+*.key
+*.pem
+*.pfx
+*.p12
+*.dpapi
+*.crt
+*.cer

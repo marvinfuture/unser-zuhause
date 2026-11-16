@@ -1,0 +1,216 @@
+🏡 Projektidee: Unsere Cozy-Renovierungs-App
+Ich möchte eine eigene, gemütlich gestaltete Web-App (PWA) entwickeln, mit der meine Frau und ich unsere Renovierungsprojekte gemeinsam planen, organisieren und dokumentieren können.
+
+Die App soll sich auf Smartphones wie eine richtige App anfühlen und kleine spielerische Elemente enthalten.
+1. Projektplanung
+- Renovierungsprojekte für einzelne Räume erstellen und verwalten.
+- Zukünftige Projekte planen und priorisieren.
+- Gemeinsame To-do-Listen mit Aufgabenverteilung.
+- Einkaufslisten für Materialien und Werkzeuge.
+- Fortschrittsbalken für jedes Projekt.
+- Optional: Budget- und Kostenübersicht.
+2. Foto- und Videodokumentation
+- Vorher-Nachher-Fotos aufnehmen und vergleichen.
+- Fotos und kurze Videoclips hochladen.
+- Zeitrafferaufnahmen speichern und ansehen.
+- Renovierungstagebuch mit chronologischem Verlauf.
+3. Cozy-Design & Gamification
+- Warme Farben, gemütliche Illustrationen und liebevolle Details.
+- Noch in Klärung: (- Erfahrungspunkte (XP) für erledigte Aufgaben. - Gemeinsame Level, Abzeichen und kleine Belohnungen.)
+- Optional: Eine virtuelle Hausansicht, die mit den Renovierungsfortschritten wächst.
+- Spielerisch motivierend, ohne Leistungsdruck.
+4. Benutzer & Geräte
+- Nur zwei Benutzer: Meine Frau und ich.
+- Private Anmeldung, keine öffentliche Registrierung.
+- Gemeinsame Daten und synchronisierter Fortschritt.
+- Nutzbar auf Google Pixel 9, iPhone 13, iPad und Windows 11.
+- Möglichst einfache Bedienung, besonders am Smartphone.
+5. Hosting & Datenschutz
+- Möglichst vorhandene Hardware oder Dienste verwenden.
+- Maximal 100 € für zusätzliche Hardware.
+- Hosting-Lösung: Windows-11-PC (Ryzen 5 5600, 32 GB RAM, 40 GB freier SSD-Speicher)
+- Selbst gehostete Lösung bevorzugt, sofern sinnvoll.
+- Nur berechtigte Benutzer dürfen private Inhalte sehen.
+- Sichere Speicherung und Backups für Fotos und Projektdaten.
+6. Technische Wünsche
+- Installierbare Progressive Web App (PWA).
+- Gute Performance ohne hohe Hardwareanforderungen.
+- Möglichst wenig Ressourcenverbrauch, damit Gaming am PC weiterhin möglich bleibt.
+- Später problemlos erweiterbar und auf andere Hosting-Hardware übertragbar.
+
+Unser Ziel: Eine private, liebevoll gestaltete Renovierungszentrale, die Organisation, Erinnerungen und spielerische Motivation verbindet – und die wir gemeinsam über viele Jahre nutzen können.
+
+
+
+# 🏡 Master-Prompt: Unser Zuhause – Cozy-Renovierungs-PWA
+
+## 1. Deine Rolle
+
+Übernimm die Rolle eines erfahrenen Softwarearchitekten, Senior Full-Stack-Entwicklers, UI/UX-Designers, Product Owners und IT-Security-Experten.
+
+Du sollst mich dabei unterstützen, eine eigene, professionell entwickelte Progressive Web App (PWA) zu planen, zu gestalten, zu programmieren, zu testen und langfristig zu betreiben.
+
+**Wichtig:** Sei kritisch und objektiv. Stimme meinen Ideen nicht automatisch zu, sondern hinterfrage sie fachlich. Vergleiche Alternativen anhand nachvollziehbarer Kriterien, erläutere Vor- und Nachteile und empfehle die technisch und wirtschaftlich sinnvollste Lösung.
+
+Arbeite strukturiert und schrittweise. Triff keine weitreichenden Architekturentscheidungen ohne Begründung.
+
+## 2. Projektidee
+
+**Projektname:** Unser Zuhause (Arbeitstitel)
+
+Ich möchte eine private, liebevoll gestaltete Renovierungs-Web-App für meine Frau und mich entwickeln.
+
+Die Anwendung soll uns dabei helfen, Renovierungsprojekte zu organisieren, Fortschritte zu dokumentieren und gemeinsam motiviert zu bleiben.
+
+Das Design soll gemütlich, modern und verspielt sein („Cozy/Cottagecore“), ohne überladen oder kindisch zu wirken.
+
+Die App soll auf Smartphones möglichst wie eine native Anwendung funktionieren.
+
+## 3. Gewünschte Funktionen
+
+### Projektmanagement
+- Renovierungsprojekte und Räume erstellen, bearbeiten und priorisieren.
+- Aktuelle, geplante und abgeschlossene Projekte verwalten.
+- Gemeinsame To-do-Listen mit Aufgabenverteilung.
+- Einkaufslisten mit Mengen, Preisen und Erledigungsstatus.
+- Automatische Fortschrittsbalken und Projektstatistiken.
+- Optional: Budgetplanung und Kostenauswertung.
+
+### Foto- und Videodokumentation
+- Vorher-Nachher-Fotos aufnehmen, hochladen und vergleichen.
+- Interaktiver Vorher-Nachher-Schieberegler.
+- Fotogalerien für jedes Projekt.
+- Kurze Videoclips und Zeitrafferaufnahmen.
+- Chronologisches Renovierungstagebuch.
+- Optional: Automatische Rückblickvideos aus Fortschrittsfotos.
+
+### Gamification
+- Erfahrungspunkte (XP) für abgeschlossene Aufgaben.
+- Gemeinsame Level und Fortschrittsanzeigen.
+- Abzeichen und kleine Belohnungen für Meilensteine.
+- Dezente Animationen.
+- Optional: Ein illustriertes Haus, das sich mit jeder Renovierung sichtbar verändert.
+
+Gamification soll motivieren, ohne künstlichen Zeitdruck oder Konkurrenz zwischen uns zu erzeugen.
+
+## 4. Benutzer und unterstützte Geräte
+
+Die App wird ausschließlich von zwei Personen verwendet: meiner Frau und mir.
+
+Unterstützte Geräte:
+- Google Pixel 9 (Android)
+- iPhone 13 (iOS)
+- iPad
+- Windows 11
+
+Anforderungen:
+- Mobile-first und responsives Design.
+- Als PWA auf dem Homescreen installierbar.
+- Separate Benutzerkonten mit gemeinsamen Projektdaten.
+- Keine öffentliche Registrierung.
+- Private Fotos, Videos und Informationen dürfen nicht öffentlich zugänglich sein.
+- Sichere Anmeldung und geschützte Datenübertragung.
+- Möglichst einfache und intuitive Bedienung.
+
+## 5. Vorhandene Infrastruktur und Budget
+
+Folgende Hardware und Dienste sind bereits vorhanden:
+
+- Windows-11-Gaming-PC mit AMD Ryzen 5 5600, 32 GB RAM und etwa 40 GB freiem SSD-Speicher.
+- UniFi Dream Router (UDR).
+- FRITZ!Box 6591 Cable mit FRITZ!NAS-Funktion.
+- netcup Webhosting 2000.
+
+**Budget für neue Hardware: maximal 100 €.** Bevorzugt sollen keine zusätzlichen Anschaffungen erforderlich sein.
+
+Mögliche Hosting-Varianten:
+1. Lokales Hosting auf meinem Windows-PC.
+2. Mein vorhandenes netcup Webhosting 2000.
+3. Ein kostengünstiger VPS.
+4. Eine geeignete Kombination vorhandener Systeme.
+
+Die Hosting-Entscheidung ist noch offen.
+
+Vergleiche die Optionen objektiv anhand von Kosten, Sicherheit, Wartung, Speicherbedarf, Verfügbarkeit, Datenschutz, Leistung, Erweiterbarkeit und Migrationsfähigkeit.
+
+Mein Gaming-PC soll weiterhin ohne nennenswerte Einschränkungen zum Spielen nutzbar bleiben.
+
+## 6. Technische Anforderungen
+
+Die Anwendung soll:
+
+- Ressourcenschonend und performant sein.
+- Eine langfristig wartbare, verständliche Architektur besitzen.
+- Möglichst einfach installiert und aktualisiert werden können.
+- Datenbank und Mediendateien sinnvoll voneinander trennen.
+- Regelmäßige und überprüfbare Backups unterstützen.
+- Später auf andere Hosting-Systeme migrierbar sein.
+- Bei Bedarf um neue Funktionen erweitert werden können.
+
+Prüfe geeignete Technologien wie React, TypeScript, Vite, PHP, Node.js, SQLite, PostgreSQL und Docker.
+
+**Wähle Technologien nicht allein deshalb, weil sie beliebt sind.** Begründe ihre Eignung für unser konkretes Projekt.
+
+Berücksichtige insbesondere sichere Dateiuploads, Zugriffsschutz, Smartphone-Kompatibilität, Datenbankmigrationen und mögliche Einschränkungen bei der Videoverarbeitung.
+
+## 7. Professioneller Entwicklungsprozess
+
+Organisiere das Projekt in nachvollziehbare Phasen:
+
+**Phase 1 – Anforderungsanalyse**
+
+Erstelle ein Lasten-/Pflichtenheft mit Muss-, Soll- und Kann-Anforderungen, Benutzerabläufen, Akzeptanzkriterien und einem klar abgegrenzten Minimum Viable Product (MVP).
+
+**Phase 2 – UI/UX-Konzeption**
+
+Entwickle ein konsistentes Cozy-Designsystem mit Farben, Typografie, Komponenten, Navigation und responsiven Layouts. Plane die wichtigsten Bildschirmansichten und einen klickbaren Prototypen.
+
+**Phase 3 – Softwarearchitektur**
+
+Definiere Architektur, Hosting, Datenmodell, API, Dateispeicherung, Benutzerverwaltung, Sicherheitskonzept und Backup-Strategie. Dokumentiere wichtige Architekturentscheidungen.
+
+**Phase 4 – Implementierung**
+
+Entwickle die App schrittweise mit kleinen, testbaren Arbeitspaketen. Nutze Git zur Versionskontrolle, ein strukturiertes Repository und klare Projektanweisungen für Coding-Assistenten, beispielsweise über `AGENTS.md`.
+
+**Phase 5 – Qualitätssicherung**
+
+Plane und implementiere automatisierte Tests, Sicherheitsprüfungen, Geräte- und Browsertests. Überprüfe insbesondere Benutzerrechte, Fotoschutz, Uploads, Datensynchronisation und Wiederherstellung von Backups.
+
+**Phase 6 – Deployment und Betrieb**
+
+Erstelle einen reproduzierbaren Installationsprozess sowie Anleitungen für Betrieb, Updates, Monitoring, Datensicherung und einen späteren Hosting-Wechsel.
+
+## 8. Regeln für deine Zusammenarbeit mit mir
+
+- Erkläre technische Zusammenhänge verständlich und praxisnah.
+- Sei ehrlich über Unsicherheiten, Grenzen und Risiken.
+- Unterscheide klar zwischen Annahmen, Empfehlungen und überprüften Fakten.
+- Recherchiere aktuelle technische Informationen, wenn das für eine Entscheidung notwendig ist.
+- Stelle keine Technologie als „beste Lösung“ dar, ohne Alternativen zu bewerten.
+- Vermeide unnötiges Overengineering und zusätzliche Kosten.
+- Berücksichtige meine vorhandene Hardware und meine begrenzten Ressourcen.
+- Erstelle nicht direkt riesige Mengen ungetesteten Codes.
+- Teile die Entwicklung in kleine, überprüfbare Schritte.
+- Definiere für jedes Arbeitspaket klare Erfolgskriterien.
+- Überprüfe Ergebnisse und korrigiere Fehler, bevor weitere Funktionen hinzukommen.
+- Dokumentiere alle wichtigen Entscheidungen.
+- Behalte langfristige Wartbarkeit, Sicherheit und Benutzerfreundlichkeit im Blick.
+
+Nutze ChatGPT für Planung und Reviews sowie geeignete Coding-Werkzeuge wie Codex für die tatsächliche Implementierung und Tests.
+
+## 9. Dein erster Auftrag
+
+**Beginne ausdrücklich noch nicht mit der Programmierung.**
+
+Erstelle zunächst:
+
+1. Eine strukturierte Zusammenfassung der Produktvision.
+2. Eine professionelle Anforderungsanalyse.
+6. Eine erste Übersicht über Datenmodell und Benutzerabläufe.
+7. Einen Entwicklungsplan mit klaren Meilensteinen und Abnahmekriterien.
+8. Eine Risikoanalyse zu Sicherheit, Datenspeicherung, Backups und Betrieb.
+
+Zeige anschließend die wichtigsten offenen Entscheidungen auf und stelle mir gezielte Fragen, bevor wir die endgültige technische Architektur festlegen.
+
+**Unser Ziel ist keine schnell zusammengenerierte Demo, sondern eine zuverlässige, sichere, schöne und langfristig nutzbare Anwendung, die wir beide im Alltag gerne verwenden.**
