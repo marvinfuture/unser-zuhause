@@ -1,3 +1,4 @@
+﻿# Prüft die TypeScript-Typen und erzeugt die auslieferbare Oberfläche in dist; verändert keine Haushaltsdaten.
 . (Join-Path $PSScriptRoot 'Common.ps1')
 $node=Get-ZuhauseNode
 $env:PATH=(Split-Path -Parent $node)+';'+$env:PATH

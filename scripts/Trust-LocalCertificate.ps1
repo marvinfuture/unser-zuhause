@@ -1,3 +1,4 @@
+﻿# Vertraut der eigenen lokalen Zertifikatsstelle für dieses Windows-Konto und exportiert ausschließlich das öffentliche Zertifikat.
 . (Join-Path $PSScriptRoot 'Common.ps1')
 $config=Read-ZuhauseConfig
 $certificate=Join-Path $config.dataDir 'caddy\pki\authorities\local\root.crt'

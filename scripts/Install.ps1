@@ -1,3 +1,4 @@
+﻿# Lädt die geprüfte portable Node-Laufzeit, installiert die festgeschriebenen Pakete und baut die Oberfläche.
 . (Join-Path $PSScriptRoot 'Common.ps1')
 $version='v26.13.1'
 $toolsPath=Join-Path $projectRoot '.tools'

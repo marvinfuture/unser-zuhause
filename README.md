@@ -4,6 +4,8 @@ Private Renovierungsapp für Karla und Marvin. Die Anwendung läuft auf dem Wind
 
 Die Funktionen der ersten Version umfassen Räume, Projekte, Aufgaben, Einkaufslisten, Hausmängel, Fotos, Vorher-Nachher-Vergleiche und Projektverlauf. Der beschlossene Umfang und die Abnahmekriterien stehen in [PLANUNG.md](PLANUNG.md).
 
+Die vollständige Schritt-für-Schritt-Anleitung für Programme, Installation, iPhone-Zugriff, Autostart, Sicherung und Updates findest du in [howto.md](howto.md).
+
 ## Auf diesem PC starten
 
 PowerShell im Ordner `C:\wxbapp` öffnen. Die portable Node-Laufzeit und die Paketabhängigkeiten werden bei der Umsetzung vorbereitet. Für eine frische Installation oder einen Umzug:
@@ -32,7 +34,7 @@ Die Skripte verwalten nur ihre eigenen Prozesse. Ein separat gestarteter Entwick
 
 ## Auf dem Handy verwenden
 
-Die vollständige Anleitung steht in [docs/BETRIEB.md](docs/BETRIEB.md). Die Schritte sind:
+Die vollständige Anleitung steht in [howto.md](howto.md), ergänzende technische Details in [docs/BETRIEB.md](docs/BETRIEB.md). Die Schritte sind:
 
 1. Haushaltskennwort lokal auf dem PC festlegen.
 2. Dem PC im Router eine feste Heimnetz-IP zuweisen.

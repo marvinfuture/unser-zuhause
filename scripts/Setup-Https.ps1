@@ -1,3 +1,4 @@
+﻿# Bereitet Caddy für die angegebene Heimnetzadresse vor und richtet auf Wunsch eine eng begrenzte Firewallregel ein.
 param(
     [Parameter(Mandatory=$true)][string]$LanIp,
     [Parameter(Mandatory=$true)][string]$AllowedSubnet,
@@ -66,8 +67,15 @@ New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
 $caddyfilePath=Join-Path $runtimeRoot 'Caddyfile'
 $utf8=New-Object Text.UTF8Encoding($false)
 [IO.File]::WriteAllText($caddyfilePath,$caddyfile,$utf8)
-& $caddy adapt --config $caddyfilePath --adapter caddyfile --validate 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'Caddy-Konfiguration konnte nicht validiert werden.' }
+# Caddy schreibt auch erfolgreiche Statusmeldungen auf stderr. Unter Windows PowerShell 5.1
+# darf dies nicht als Abbruch gelten; allein der Exitcode entscheidet über die Validierung.
+$previousErrorAction=$ErrorActionPreference
+try {
+    $ErrorActionPreference='Continue'
+    $validationOutput=@(& $caddy adapt --config $caddyfilePath --adapter caddyfile --validate 2>&1)
+    $validationExitCode=$LASTEXITCODE
+} finally { $ErrorActionPreference=$previousErrorAction }
+if ($validationExitCode -ne 0) { throw ('Caddy-Konfiguration konnte nicht validiert werden: ' + ($validationOutput -join "`n")) }
 $config.origin='https://'+$Hostname;$config.https=$true;$config.lanIp=$LanIp;$config.hostname=$Hostname
 Save-ZuhauseConfig $config
 if ($ConfigureFirewall) {

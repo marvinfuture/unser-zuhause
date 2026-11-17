@@ -1,3 +1,4 @@
+﻿# Registriert den Supervisor beim Windows-Start; Zugangsdaten des gewählten Windows-Kontos gehen nur an die Aufgabenplanung.
 . (Join-Path $PSScriptRoot 'Common.ps1')
 Assert-ZuhauseAdmin
 $config=Read-ZuhauseConfig

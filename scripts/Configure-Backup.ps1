@@ -1,3 +1,4 @@
+﻿# Speichert das Sicherungsziel und schützt dessen verdeckt eingegebenes Kennwort mit Windows-DPAPI für dieses Konto.
 param([Parameter(Mandatory=$true)][string]$RepositoryDir)
 . (Join-Path $PSScriptRoot 'Common.ps1')
 $config=Read-ZuhauseConfig

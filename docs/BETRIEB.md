@@ -1,5 +1,7 @@
 # Betrieb auf Windows 11
 
+Für die vollständige Einrichtung von Anfang an einschließlich Programmdownloads und iPhone-Schritten siehe [howto.md](../howto.md). Dieses Dokument ergänzt technische Betriebsdetails.
+
 Die Anwendung besteht aus einem Node-Prozess für Daten und Oberfläche sowie optional Caddy für HTTPS. Node hört nur auf `127.0.0.1:3210`. Caddy bindet ausschließlich die ausdrücklich eingerichtete private IPv4-Adresse. Es gibt keine Cloud-Veröffentlichung oder Router-Portweiterleitung.
 
 ## Ordner und Konfiguration
@@ -108,7 +110,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Restore.ps1 -Repos
 
 Die Passphrase wird verdeckt abgefragt und über Standardeingabe übergeben. Sie steht weder in der Befehlszeile noch im Protokoll. Vorhandene Dateien im Ziel führen zum Abbruch. Beschädigte Dateien, falsche Schlüssel und gefährliche Pfade werden abgelehnt. Vor erfolgreichem Abschluss werden die Datenbankintegrität und Datei-Prüfsummen geprüft. Alte Sitzungen und Retry-Kennungen werden entfernt; nach dem Start müsst ihr euch neu anmelden.
 
-Den wiederhergestellten Haushalt zunächst getrennt prüfen: Räume und Aufgaben ansehen, Originalfoto und Vorschau öffnen, Bildpaar vergleichen. Erst danach mit `Start.ps1 -DataDir 'C:\UnserZuhause-Wiederhergestellt'` als regulären Datenordner verwenden. Hostname, IP und Caddy-Speicherpfad können bei einem Umzug anders sein; HTTPS-Konfiguration erneut erzeugen. Die gespeicherte `runtime-config.json` dient als Referenz und wird nicht ungeprüft aktiviert.
+Zum Prüfen den neuen Datenpfad bei gestoppter App in `.runtime\config.json` eintragen und bei HTTPS-Betrieb die HTTPS-Konfiguration vor dem Start erneut erzeugen. Der Caddy-Speicherpfad muss zum neuen Datenordner passen; bei einem Umzug können außerdem Hostname und IP anders sein. Die vollständige Befehlsfolge steht in [howto.md, Abschnitt 9](../howto.md#9-daten-wiederherstellen). Nach dem Start Räume und Aufgaben ansehen, Originalfoto und Vorschau öffnen sowie ein Bildpaar vergleichen. Der alte Datenordner bleibt bis zum erfolgreichen Abschluss erhalten. Die gespeicherte `runtime-config.json` dient als Referenz und wird nicht ungeprüft aktiviert.
 
 Ein Backup auf einem verlorenen oder beschädigten PC ist nur hilfreich, wenn Archiv und Wiederherstellungskennwort unabhängig verfügbar sind. Eine Wiederherstellungsprobe ist vor Produktivbetrieb und nach wesentlichen Sicherungsänderungen erforderlich.
 

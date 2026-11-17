@@ -1,3 +1,4 @@
+﻿# Startet den eigenen Supervisor unsichtbar; übernimmt optional einen Datenpfad und öffnet die konfigurierte App-Adresse.
 param([string]$DataDir, [switch]$OpenBrowser)
 . (Join-Path $PSScriptRoot 'Common.ps1')
 if (Test-ZuhauseSupervisor) { Write-Host 'Unser Zuhause läuft bereits.'; exit 0 }

@@ -3,17 +3,48 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles.css';
 
+/**
+ * Fängt Renderfehler im Komponentenbaum ab und bietet einen Neustart der Ansicht statt einer leeren
+ * Seite.
+ */
 class ErrorBoundary extends React.Component<React.PropsWithChildren, { failed: boolean }> {
   state = { failed: false };
-  static getDerivedStateFromError() { return { failed: true }; }
+  /** Schaltet nach einem von React abgefangenen Renderfehler dauerhaft auf die Ersatzansicht um. */
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  /** Zeigt entweder die eigentliche App oder die Fehlermeldung mit bewusst auslösbarem Neuladen. */
   render() {
-    if (this.state.failed) return <main className="fatal"><h1>Ein kleiner Stolperstein.</h1><p>Die Ansicht konnte nicht geladen werden. Bereits gespeicherte Daten bleiben erhalten.</p><button onClick={() => location.reload()} className="button primary">Ansicht neu laden</button></main>;
+    if (this.state.failed)
+      return (
+        <main className="fatal">
+          <h1>Ein kleiner Stolperstein.</h1>
+          <p>
+            Die Ansicht konnte nicht geladen werden. Bereits gespeicherte Daten bleiben erhalten.
+          </p>
+          <button onClick={() => location.reload()} className="button primary">
+            Ansicht neu laden
+          </button>
+        </main>
+      );
     return this.props.children;
   }
 }
 
-createRoot(document.getElementById('root')!).render(<React.StrictMode><ErrorBoundary><App /></ErrorBoundary></React.StrictMode>);
+// StrictMode prüft im Entwicklungsbetrieb unter anderem, ob Effekte ihre Ressourcen wieder freigeben.
+createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  </React.StrictMode>,
+);
 
 if ('serviceWorker' in navigator && window.isSecureContext) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => { /* application works without installation */ }));
+  // Die optionale PWA-Registrierung wartet auf den Seitenaufbau und läuft nur in einem sicheren Kontext.
+  window.addEventListener('load', () =>
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* Die Webapp bleibt auch ohne PWA-Installation nutzbar. */
+    }),
+  );
 }

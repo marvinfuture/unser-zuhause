@@ -1,4 +1,4 @@
-# A persistent supervisor, launched hidden by Start.ps1 or Task Scheduler.
+﻿# Überwacht die eigenen App- und HTTPS-Prozesse; Start.ps1 oder die Aufgabenplanung startet diesen Supervisor unsichtbar.
 . (Join-Path $PSScriptRoot 'Common.ps1')
 $node=Get-ZuhauseNode
 New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
@@ -26,6 +26,7 @@ try {
     Protect-ZuhauseDirectory $env:DATA_DIR
     $config | ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $env:DATA_DIR 'runtime-config.json')
     $logs=Join-Path $runtimeRoot 'logs'; New-Item -ItemType Directory -Force -Path $logs | Out-Null
+    # Startet einen verwalteten Prozess ohne sichtbares Fenster und begrenzt dessen Protokolle durch Rotation beim Neustart.
     function Launch-Owned([string]$Name,[string]$Executable,[string]$Arguments) {
         foreach ($suffix in @('out','err')) {
             $logPath=Join-Path $logs ($Name+'.'+$suffix+'.log')
