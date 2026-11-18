@@ -1,5 +1,19 @@
 import type { Session } from '../shared/types';
 
+export type AuthorContext = Pick<Session, 'csrfToken' | 'profileVersion' | 'profileId'>;
+
+/**
+ * Prüft das beim Öffnen bestätigte Namensschild samt Sitzungsgeneration. Eine neue Sitzung darf
+ * auch bei gleicher Person und erneut gleicher Profilversion keinen alten Formularautor übernehmen.
+ */
+export function hasSameAuthorContext(opened: AuthorContext, current: Session): boolean {
+  return (
+    opened.csrfToken === current.csrfToken &&
+    opened.profileVersion === current.profileVersion &&
+    opened.profileId === current.profileId
+  );
+}
+
 /** Transportiert neben der Meldung den HTTP-Status und den fachlichen Fehlercode zur Oberfläche. */
 export class ApiError extends Error {
   /** Bewahrt den Serverstatus; Status 0 bezeichnet einen nicht bestätigten Netzwerkzugriff. */
@@ -13,13 +27,13 @@ export class ApiError extends Error {
 }
 
 /**
- * Führt einen JSON-Aufruf gegen die lokale API mit Haushaltssitzung und gegebenenfalls CSRF-Token aus.
+ * Führt einen JSON-Aufruf gegen die lokale API mit Gerätesitzung und gegebenenfalls CSRF-Token aus.
  * Antworten werden nicht im Browsercache gespeichert. Netzwerk- und Serverfehler erhalten ein
  * einheitliches ApiError-Format, damit Formulare ihre Eingaben behalten und Konflikte erkennen können.
  */
 export async function api<T>(
   path: string,
-  options: { method?: string; body?: unknown; session?: Session | null } = {},
+  options: { method?: string; body?: unknown; session?: Session | null; signal?: AbortSignal } = {},
 ): Promise<T> {
   let response: Response;
   try {
@@ -27,13 +41,16 @@ export async function api<T>(
       method: options.method || 'GET',
       credentials: 'same-origin',
       cache: 'no-store',
+      signal: options.signal,
       headers: {
         ...(options.body ? { 'Content-Type': 'application/json' } : {}),
         ...(options.session?.csrfToken ? { 'X-CSRF-Token': options.session.csrfToken } : {}),
       },
       ...(options.body ? { body: JSON.stringify(options.body) } : {}),
     });
-  } catch {
+  } catch (error) {
+    // Ein bewusst abgebrochener alter Sitzungsabruf ist kein Verbindungsfehler der aktuellen Ansicht.
+    if (options.signal?.aborted) throw error;
     throw new ApiError(
       'Keine Verbindung zu eurem Zuhause-PC. Deine Eingaben sind noch hier, aber nicht gespeichert.',
       0,

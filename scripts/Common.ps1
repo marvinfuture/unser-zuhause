@@ -42,23 +42,27 @@ function Test-ZuhauseSupervisor {
     } catch { return $false }
 }
 
-# Beschränkt die Dateiberechtigungen für lokale Geheimnisse auf das aktuelle Windows-Konto und SYSTEM.
+# Setzt nur die Zugriffsregeln einer Datei auf das aktuelle Konto und SYSTEM; Besitzer und Überwachungsregeln bleiben unverändert.
 function Protect-ZuhauseFile([string]$Path) {
-    $identity=[Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $acl=Get-Acl -LiteralPath $Path
+    $identity=[Security.Principal.WindowsIdentity]::GetCurrent().User
+    $system=New-Object Security.Principal.SecurityIdentifier('S-1-5-18')
+    $acl=New-Object Security.AccessControl.FileSecurity
     $acl.SetAccessRuleProtection($true,$false)
     $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($identity,'FullControl','Allow')))
-    $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule('SYSTEM','FullControl','Allow')))
-    Set-Acl -LiteralPath $Path -AclObject $acl
+    $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($system,'FullControl','Allow')))
+    # Ein neues Security-Objekt markiert nur die DACL als geändert und benötigt keine Rechte zum Schreiben der SACL.
+    [IO.File]::SetAccessControl([IO.Path]::GetFullPath($Path),$acl)
 }
 
-# Beschränkt den dedizierten Datenordner samt vererbten Rechten auf das aktuelle Konto und SYSTEM.
+# Setzt nur die Zugriffsregeln des Datenordners samt Vererbung auf das aktuelle Konto und SYSTEM; Besitzer und Überwachung bleiben unverändert.
 function Protect-ZuhauseDirectory([string]$Path) {
-    $identity=[Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $acl=Get-Acl -LiteralPath $Path
+    $identity=[Security.Principal.WindowsIdentity]::GetCurrent().User
+    $system=New-Object Security.Principal.SecurityIdentifier('S-1-5-18')
+    $acl=New-Object Security.AccessControl.DirectorySecurity
     $acl.SetAccessRuleProtection($true,$false)
-    foreach ($name in @($identity,'SYSTEM')) {
-        $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($name,'FullControl','ContainerInherit,ObjectInherit','None','Allow')))
+    foreach ($sid in @($identity,$system)) {
+        $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow')))
     }
-    Set-Acl -LiteralPath $Path -AclObject $acl
+    # Directory.SetAccessControl schreibt nur die geänderte DACL und lässt Besitzer sowie SACL unangetastet.
+    [IO.Directory]::SetAccessControl([IO.Path]::GetFullPath($Path),$acl)
 }

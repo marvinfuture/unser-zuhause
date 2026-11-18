@@ -43,7 +43,7 @@ export class Store {
     const latest = this.raw
       .prepare("SELECT MAX(version) AS version FROM migrations")
       .get() as { version: number | null };
-    if ((latest.version ?? 0) > 1)
+    if ((latest.version ?? 0) > 3)
       throw new Error("Diese Datenbank benötigt eine neuere App-Version.");
     if (!latest.version)
       this.transaction(() => {
@@ -56,6 +56,34 @@ export class Store {
       `);
         this.raw
           .prepare("INSERT INTO migrations VALUES(1,?)")
+          .run(new Date().toISOString());
+      });
+    if ((latest.version ?? 0) < 2)
+      this.transaction(() => {
+        // Version 2 entfernt ausschließlich den bisherigen App-Zugangsschutz.
+        // Fachliche Datensätze, Medienmetadaten und Backup-Einstellungen bleiben erhalten.
+        this.raw
+          .prepare("DELETE FROM settings WHERE key=?")
+          .run("passwordHash");
+        this.raw.exec("DELETE FROM sessions");
+        this.raw
+          .prepare("INSERT INTO migrations VALUES(2,?)")
+          .run(new Date().toISOString());
+      });
+    if ((latest.version ?? 0) < 3)
+      this.transaction(() => {
+        // Version 3 ergänzt die Projektplanung, ohne Autoren, Versionsstände oder bestehende Angaben umzuschreiben.
+        for (const task of this.list<
+          BaseRecord & { phase?: string; predecessorIds?: string[] }
+        >("tasks")) {
+          this.put("tasks", {
+            ...task,
+            phase: task.phase ?? "preparation",
+            predecessorIds: task.predecessorIds ?? [],
+          } as BaseRecord);
+        }
+        this.raw
+          .prepare("INSERT INTO migrations VALUES(3,?)")
           .run(new Date().toISOString());
       });
   }
@@ -118,7 +146,7 @@ export class Store {
     return row ? (JSON.parse(row.value) as T) : undefined;
   }
   /**
-   * Speichert oder ersetzt einen JSON-Einstellungswert, beispielsweise den Kennworthash oder interne Medienmetadaten.
+   * Speichert oder ersetzt einen JSON-Einstellungswert, beispielsweise interne Medienmetadaten oder Betriebsgrenzen.
    */
   setSetting(key: string, value: unknown): void {
     this.raw

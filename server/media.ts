@@ -224,7 +224,7 @@ export function registerMedia(
   ctx: AppContext,
   options: MediaOptions = {},
 ): void {
-  const { app, db, requireAuth, requireWrite, assertProfile } = ctx;
+  const { app, db, requireSession, requireWrite, assertProfile } = ctx;
   const root = join(db.dataDir, "media"),
     tmp = join(root, "tmp");
   for (const dir of [
@@ -469,7 +469,7 @@ export function registerMedia(
     }
   });
   /** GET /api/photos/:id/file: liefert Original oder Vorschau nur mit gültiger Sitzung und ohne dauerhafte Browserablage. */
-  app.get("/api/photos/:id/file", requireAuth, (req, res, next) => {
+  app.get("/api/photos/:id/file", requireSession, (req, res, next) => {
     try {
       const photo = db.get<Photo>("photos", String(req.params.id));
       if (!photo || photo.deletedAt)

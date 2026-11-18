@@ -16,7 +16,6 @@ const ctx = createApp({
     process.env.SECURE_COOKIES === undefined
       ? undefined
       : process.env.SECURE_COOKIES === "true",
-  allowSetup: process.env.ALLOW_SETUP !== "false",
   distDir: resolve("dist"),
   /**
    * Bindet Medien- und Betriebsrouten in die App ein, bevor deren abschließende Fehler- und Oberflächenrouten registriert werden.

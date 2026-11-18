@@ -8,7 +8,7 @@ import { mediaLimit, mediaUsage, freeSpace, cleanupMedia } from "./media.js";
  * Registriert geschützte Betriebsinformationen und manuelle Sicherung sowie zeitgesteuerte Wartung. Die Timer halten den Node-Prozess nicht allein am Leben.
  */
 export function registerOperations(ctx: AppContext): void {
-  const { app, db, requireAuth, requireWrite, assertProfile } = ctx;
+  const { app, db, requireSession, requireWrite, assertProfile } = ctx;
   /**
    * Prüft, ob sowohl ein Sicherungsziel als auch ein Sicherungskennwort über die Prozessumgebung eingerichtet sind.
    */
@@ -25,8 +25,8 @@ export function registerOperations(ctx: AppContext): void {
       database: db.raw,
       databaseFilename: basename(db.path),
     });
-  /** GET /api/system: liefert angemeldeten Geräten Speicherverbrauch, freien Platz und den letzten Sicherungsstatus. */
-  app.get("/api/system", requireAuth, async (_req, res, next) => {
+  /** GET /api/system: liefert Geräten mit gültiger Sitzung Speicherverbrauch, freien Platz und den letzten Sicherungsstatus. */
+  app.get("/api/system", requireSession, async (_req, res, next) => {
     try {
       res.json({
         mediaBytes: mediaUsage(ctx),

@@ -47,9 +47,7 @@ async function fixture(t: TestContext, limitBytes?: number) {
       },
       ...(body
         ? {
-            body: JSON.stringify(
-              path === "/setup" ? body : { profileVersion: version, ...body },
-            ),
+            body: JSON.stringify({ profileVersion: version, ...body }),
           }
         : {}),
     });
@@ -60,11 +58,7 @@ async function fixture(t: TestContext, limitBytes?: number) {
     if (data.profileVersion !== undefined) version = data.profileVersion;
     return { status: response.status, data };
   };
-  assert.equal(
-    (await json("POST", "/setup", { password: "Nur ein Kennwort für Tests!" }))
-      .status,
-    201,
-  );
+  assert.equal((await json("GET", "/session")).status, 200);
   await json("POST", "/profile", { profileId: "karla" });
   const project = (
     await json("POST", "/projects", {
@@ -72,7 +66,7 @@ async function fixture(t: TestContext, limitBytes?: number) {
       requestId: randomUUID(),
     })
   ).data;
-  /** Lädt künstliche Bildbytes mit wählbaren Formularwerten hoch; kann für Zugriffstests die Anmeldung weglassen. */
+  /** Lädt künstliche Bildbytes mit wählbaren Formularwerten hoch; kann für Zugriffstests die Gerätesitzung weglassen. */
   const upload = async (
     buffer: Buffer,
     fields: Record<string, string> = {},

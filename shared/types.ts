@@ -6,6 +6,19 @@ export interface Profile {
   color: string;
 }
 export type Priority = "urgent" | "high" | "normal" | "later";
+export const TASK_PHASES = [
+  "planning",
+  "preparation",
+  "execution",
+  "finishing",
+] as const;
+export type TaskPhase = (typeof TASK_PHASES)[number];
+export const taskPhaseLabels: Record<TaskPhase, string> = {
+  planning: "Planung",
+  preparation: "Vorbereitung",
+  execution: "Renovierung",
+  finishing: "Abschluss",
+};
 export interface BaseRecord {
   id: string;
   createdAt: string;
@@ -39,6 +52,8 @@ export interface Task extends BaseRecord {
   defectId: string | null;
   priority: Priority;
   status: "open" | "active" | "blocked" | "done";
+  phase: TaskPhase;
+  predecessorIds: string[];
   assignees: ProfileId[];
   startDate: string | null;
   dueDate: string | null;
@@ -104,9 +119,7 @@ export interface AppState {
   comparisons: Comparison[];
 }
 export interface Session {
-  configured: boolean;
-  authenticated: boolean;
-  csrfToken?: string;
+  csrfToken: string;
   profileId: ProfileId | null;
   profileVersion: number;
   profiles: Profile[];

@@ -2,11 +2,11 @@
 
 Plan für eine private Renovierungsapp für Karla und Marvin
 
-Stand: 16. November 2026. Grundlage: `info.txt`, der aktuelle Auftrag und die Antworten zur Nutzung im Heim-WLAN, zur Namensauswahl und zum zunächst kleinen Funktionsumfang.
+Stand: 17. November 2026. Grundlage: `info.txt`, die freigegebene Grundversion und die spätere Anweisung, die App ohne Kennwort direkt mit der Auswahl Karla/Marvin zu öffnen.
 
 Die App soll euch zeigen, was ihr als Nächstes am Haus machen möchtet, welche Arbeit ansteht, wer sie übernimmt und was dafür eingekauft werden muss. Fotos und ein Vorher-Nachher-Vergleich halten fest, was ihr gemeinsam geschafft habt. Die erste Version soll diese Abläufe zuverlässig abdecken.
 
-Dieser Plan ist die Grundlage für das spätere Go. Es wurden noch keine App programmiert, Pakete installiert, Dienste eingerichtet oder Netzwerkeinstellungen verändert.
+Dieser Plan beschreibt die vereinbarte Richtung der bestehenden App. Am 17. November 2026 wurden alle vier Erweiterungen in `IDEEN.md` freigegeben: kennwortfreier Einstieg, Aufgabenabhängigkeiten, Projektplanung mit Phasen/Board/Zeitachse und der überlagerte Fotovergleich.
 
 ## 1. Festgelegte Richtung
 
@@ -17,15 +17,15 @@ Dieser Plan ist die Grundlage für das spätere Go. Es wurden noch keine App pro
 | Hosting | Vorhandener Windows-11-PC |
 | Erreichbarkeit | Ausschließlich im eigenen Heimnetz; Smartphone-Nutzung im heimischen WLAN |
 | Bedienung am PC | Auch der Hosting-PC und berechtigte Geräte im verkabelten Heimnetz können die App nutzen |
-| Anmeldung | Gemeinsamer Zugangsschutz; anschließend einfache Auswahl Karla oder Marvin |
+| Einstieg | Ohne App-Kennwort direkt Karla oder Marvin auswählen |
 | Erste Version | Räume, Projekte, Aufgaben, Prioritäten, Einkauf, Mängel, Fotos, Vergleich, Dashboard und ein einfacher Verlauf |
 | Gestaltung | Warm, ruhig und gemütlich; für Erwachsene, mit gut lesbaren Texten und wenigen verspielten Details |
 | Geräte | Pixel 9, iPhone 13, iPad und Windows 11 |
 | Später | Videos, Zeitraffer, Budgetauswertung, XP, Abzeichen und weitere Komfortfunktionen |
 
-Die neuen Festlegungen ersetzen die offenen Hosting-Varianten und den ursprünglichen Wunsch nach getrennten Passwortkonten aus der Info-Datei. Es gibt zwei Personenprofile innerhalb eines gemeinsam geschützten Haushalts.
+Die neuen Festlegungen ersetzen die offenen Hosting-Varianten und die ursprünglich vorgeschlagene Kennwortanmeldung. Es gibt zwei frei wählbare Personenprofile innerhalb des gemeinsamen Haushalts.
 
-**Empfohlene Ausgestaltung des gemeinsamen Schutzes:** Beim ersten Öffnen auf einem Gerät einmal ein gemeinsames Haushaltskennwort eingeben. Danach Karla oder Marvin wählen. Die Anmeldung kann auf euren eigenen Geräten gespeichert bleiben; vorgeschlagene Laufzeit: 30 Tage. Das ausgewählte Profil bleibt sichtbar und lässt sich ohne zweites Passwort wechseln.
+**Freigegebener Einstieg:** Beim ersten Öffnen auf einem Gerät Karla oder Marvin wählen. Eine automatisch angelegte Gerätesitzung merkt sich die Auswahl bis zu 30 Tage. Das Profil bleibt sichtbar und lässt sich wechseln oder auf die Profilauswahl zurücksetzen. Wer die App im freigegebenen Heimnetz erreicht, kann die gemeinsamen Inhalte nutzen. Die Profilwahl ist keine Zugangssperre. Sicherungsverschlüsselung und Windows-Autostart behalten ihre getrennten Kennwörter.
 
 Die Profilwahl ist eine freiwillige Zuordnung innerhalb eures Haushalts. Wer Zugang hat, kann auch den anderen Namen auswählen. Ein Namensschild ist deshalb kein Nachweis, welche Person tatsächlich am Gerät saß. Für euren Wunsch nach einfacher gemeinsamer Nutzung ist dieses Modell passend.
 
@@ -50,13 +50,13 @@ Muss bedeutet: ohne diese Funktion ist die erste Version nicht abnahmefähig. So
 
 | ID | Muss-Anforderung | Ergebnis für euch |
 | --- | --- | --- |
-| F01 | Gemeinsamer geschützter Zugang und zwei feste Profile | Einfach anmelden und Karla oder Marvin auswählen; keine öffentliche Registrierung |
+| F01 | Kennwortfreier Einstieg und zwei feste Profile | Direkt Karla oder Marvin auswählen; keine Einrichtung eines App-Kennworts |
 | F02 | Personenkennzeichnung | Ersteller, letzte Bearbeitung und gegebenenfalls Erlediger bleiben nachvollziehbar |
 | F03 | Dashboard | Laufende Projekte, nächste Vorhaben, anstehende Aufgaben, Einkauf und wichtige Mängel auf einen Blick |
 | F04 | Räume und Bereiche | Anlegen, bearbeiten und archivieren; Projekte und Mängel einem Ort zuordnen |
 | F05 | Projekte | Titel, Ziel, Ort, Status, Priorität und optionaler Wunschzeitraum |
 | F06 | Nächste Renovierungen planen | Gemeinsame Reihenfolge geplanter Vorhaben manuell festlegen |
-| F07 | Aufgaben | Beschreibung, Zuständigkeit, Priorität, Status, optionaler Start und Fälligkeit |
+| F07 | Aufgaben | Beschreibung, Zuständigkeit, Priorität, Status, Phase, Vorgänger, optionaler Start und Fälligkeit |
 | F08 | Einkaufslisten | Material oder Werkzeug, Menge, Einheit, optionaler Einzelpreis und Status gekauft |
 | F09 | Mängelliste | Beschreibung, Ort, Fotos, Priorität, Zuständigkeit und Bearbeitungsstand |
 | F10 | Fotos und Galerien | Aufnahme beziehungsweise Dateiauswahl, Upload, Vorschau und geschützte Anzeige |
@@ -65,6 +65,8 @@ Muss bedeutet: ohne diese Funktion ist die erste Version nicht abnahmefähig. So
 | F13 | Mobile PWA | Übersichtliche Nutzung und Installation auf den vorgesehenen Geräten |
 | F14 | Gemeinsamer Datenstand | Änderungen auf dem zweiten Gerät sehen; Konflikte werden angezeigt |
 | F15 | Sicherung und Betrieb | Dauerhafte Speicherung, Start nach Neustart, erkennbare Fehler und geprüfte Wiederherstellung |
+| F16 | Aufgabenabhängigkeiten | Eine Aufgabe wird erst nach Abschluss aller Vorgänger startbereit; Planen und Zuweisen bleiben vorher möglich |
+| F17 | Projektplanung | Gemeinsamer Aufgabenbestand als Phasenliste, Board und Zeitachse; Termine bleiben manuell geplant |
 
 **Soll für spätere Versionen:** Globale Suche, Aufgabenvorlagen, wiederkehrende Hausarbeiten, Kommentare, komfortabler Kalender, Kostensummen nach Projekt, kurze Videos und vorhandene Zeitrafferdateien.
 
@@ -125,7 +127,7 @@ Die erste Version benötigt eine Verbindung zum Heimserver für private Inhalte 
 
 | Ablauf | Geplanter Weg |
 | --- | --- |
-| Einstieg | Haushaltskennwort eingeben → Karla oder Marvin wählen → Übersicht öffnen; auf bekannten Geräten direkt zum ausgewählten Profil |
+| Einstieg | Karla oder Marvin wählen → Übersicht öffnen; auf bekannten Geräten direkt zum ausgewählten Profil |
 | Nächstes Projekt | Raum wählen → Projekt benennen → Wunschzeitraum und Priorität setzen → in „Als Nächstes“ einordnen |
 | Arbeit verteilen | Aufgabe im Projekt anlegen → Karla, Marvin, beide oder offen wählen → Priorität und bei Bedarf Termin setzen |
 | Einkaufen | Benötigte Materialien im Projekt ergänzen → gemeinsame Einkaufsliste öffnen → bei Bedarf ausdrucken → gekaufte Positionen abhaken |
@@ -162,7 +164,7 @@ Die Farben sind ein Entwurf. Kontraste werden an den konkreten Kombinationen gep
 | Einkauf | Offene Positionen, optional nach Projekt gruppiert; Menge und Einheit gut lesbar; gekaufte Positionen eingeklappt |
 | Haus | Räume/Bereiche und separate Mängelliste; ein Mangel lässt sich mit wenigen Angaben erfassen |
 | Fotovergleich | Zwei beschriftete Bilder im gemeinsamen Rahmen, Schieber, Vollbildansicht und Wahl eines anderen Bildpaares |
-| Einstellungen | Profilwechsel, Zugang sperren/abmelden, Haushaltskennwort ändern, Speicher und Sicherungsstatus |
+| Einstellungen | Profilwechsel, zur Profilauswahl zurückkehren, Speicher und Sicherungsstatus |
 
 Das Dashboard priorisiert Handlungen: Was wollen wir als Nächstes angehen? Was steht diese Woche an? Was fehlt dafür? Es bekommt keine dekorativen Diagramme ohne Entscheidungsnutzen.
 
@@ -221,12 +223,12 @@ Der App-Server lauscht nur lokal hinter Caddy. Nur der HTTPS-Eingang wird für d
 
 | Datengruppe | Wesentliche Inhalte |
 | --- | --- |
-| Haushalt und Zugang | Kennworthash, Einstellungen, Sicherungs- und Speichergrenzen |
+| Haushalt | Einstellungen, Sicherungs- und Speichergrenzen; kein App-Kennworthash |
 | Profile | Feste IDs für Karla und Marvin, Anzeigename, Farbe |
 | Sitzungen | Zufällige Sitzungskennung, Ablauf, ausgewähltes Profil; separat pro Gerät |
 | Räume | Name, Bereich, Beschreibung, Archivstatus |
 | Projekte | Raumbezug, Titel, Ziel, Status, Priorität, Planreihenfolge, Wunschdaten, Abschluss |
-| Aufgaben | Optional Projekt/Raum, Titel, Beschreibung, Status, Priorität, Termine und Zuständigkeiten |
+| Aufgaben | Optional Projekt/Raum, Titel, Beschreibung, Status, Priorität, Termine, Zuständigkeiten, Phase und Vorgänger-IDs |
 | Einkauf | Optional Projekt, Kategorie, Bezeichnung, Menge, Einheit, Einzelpreis in Cent pro Einheit, gekauft und Käuferprofil |
 | Mängel | Ort, Beschreibung, Priorität, Status, Zuständigkeit, optional Projektverknüpfung |
 | Medien | Eigentlicher Speicherpfad intern, Dateityp, Größe, Prüfsumme, Orientierung, Aufnahme-/Uploadzeit, Zuordnung |
@@ -236,11 +238,19 @@ Der App-Server lauscht nur lokal hinter Caddy. Nur der HTTPS-Eingang wird für d
 
 Bearbeitbare fachliche Datensätze erhalten IDs, Erstellerprofil, letzte Bearbeitung, Zeitstempel und eine Versionsnummer. Zuständigkeit „beide“ wird als Beziehung zu beiden Profilen gespeichert. Datenbankbeziehungen und Transaktionen verhindern verwaiste Verknüpfungen; Medien liegen nicht als große Binärdaten in SQLite.
 
-Vorgesehene API-Bereiche: Zugang/Sitzung, Profile, Räume, Projekte, Aufgaben, Einkauf, Mängel, Medien, Vergleiche, Verlauf und Betriebsstatus. Alle privaten Daten und auch Vorschaubilder werden erst nach Prüfung der Haushaltssitzung ausgegeben. Die Profilwahl wird serverseitig auf die beiden erlaubten Profile begrenzt; ein Schreibformular bestimmt seinen Autor nicht selbst.
+Vorgesehene API-Bereiche: Gerätesitzung, Profile, Räume, Projekte, Aufgaben, Einkauf, Mängel, Medien, Vergleiche, Verlauf und Betriebsstatus. Daten und Vorschaubilder benötigen eine gültige, automatisch angelegte Gerätesitzung. Diese ist keine Kennwortanmeldung; der Zugriff ist innerhalb des freigegebenen Heimnetzes offen. Die Profilwahl wird serverseitig auf die beiden erlaubten Profile begrenzt; ein Schreibformular bestimmt seinen Autor nicht selbst.
 
 Getrennte Speicherbereiche: Quellcode und gebaute Anwendung, Datenbank, Originalbilder, Vorschauen, temporäre Uploads und Protokolle. Der Datenpfad wird konfigurierbar, etwa unter `C:\ProgramData\UnserZuhause`. SQLite liegt lokal auf dem PC, nicht in einer Netzfreigabe oder einem automatisch synchronisierten Cloud-Ordner. Ein NAS ist ein Sicherungsziel.
 
 Schemaänderungen erfolgen durch nummerierte Migrationen mit Sicherung vor dem Update. Versionsinformationen und Exportformate werden so dokumentiert, dass später App, Datenbank und Bilder auf andere Hardware umziehen können.
+
+### Erweiterte Projektplanung
+
+Aufgaben erhalten die Phasen **Planung**, **Vorbereitung**, **Renovierung** und **Abschluss**. Bereits vorhandene Aufgaben werden ohne Inhaltsverlust der Vorbereitung zugeordnet und erhalten zunächst keine Vorgänger. Liste, Board und Zeitachse verwenden dieselben Datensätze. Die Zeitachse stellt Start- und Fälligkeitsdaten dar; undatierte Aufgaben bleiben sichtbar. Automatische Terminverschiebungen, Arbeitszeitkalender und Ressourcenoptimierung sind nicht Teil dieser Erweiterung.
+
+Eine Aufgabe darf mehrere Vorgänger innerhalb desselben Projekts haben. Alle müssen erledigt sein, bevor die Aufgabe auf „In Arbeit“ oder „Erledigt“ gesetzt werden kann. Zuweisung, Priorität und Termine lassen sich bereits vorher festlegen. Offene Voraussetzungen werden als „Wartet auf …“ angezeigt; ein Filter zeigt startbereite Aufgaben. Eine manuelle Blockierung etwa wegen fehlenden Materials bleibt zusätzlich bestehen.
+
+Der Server prüft diese Regeln auch bei direkten API-Aufrufen. Selbstbezüge, doppelte Verknüpfungen, Kreise und Verbindungen zwischen unterschiedlichen Projekten sind unzulässig. Ein referenzierter Vorgänger darf nicht durch Archivierung oder Projektwechsel verschwinden. Ein erledigter Vorgänger darf nicht wieder geöffnet werden, solange darauf beruhende Folgeaufgaben laufen oder erledigt sind. Solche Konflikte müssen ausdrücklich geklärt werden; bestehende Arbeit wird nicht automatisch zurückgesetzt.
 
 ## 9. Fotos und Vergleich
 
@@ -262,12 +272,12 @@ Der Slider zeigt klare Beschriftungen und lässt sich auch mit Pfeiltasten bedie
 
 ### Zugang und Datenschutz
 
-- Keine Standardpasswörter und kein öffentlich erreichbarer Einrichtungsassistent. Das Haushaltskennwort wird bei der lokalen Einrichtung festgelegt und ausschließlich als geeigneter gesalzener Passwort-Hash gespeichert.
-- Serververwaltete Sitzungen mit HttpOnly-, Secure- und SameSite-Cookie; kein Zugangstoken im Local Storage. Eine Kennwortänderung widerruft alle bisherigen Sitzungen; eure Geräte müssen den neuen gemeinsamen Zugang bestätigen.
-- Schutz gegen wiederholtes Kennwortraten, CSRF und ungültige Eingaben; parametrisierte Datenbankabfragen und sichere Textausgabe.
+- Kein App-Kennwort, keine Kennworteinrichtung und keine Kennwortänderung. Ein alter Anmeldehash und alte Sitzungen werden bei der Umstellung durch eine nummerierte Migration entfernt; die Haushaltsdaten bleiben erhalten.
+- Serververwaltete Gerätesitzungen mit HttpOnly-, bei HTTPS Secure- und SameSite-Cookie; kein Sitzungstoken im Local Storage. Zurücksetzen einer Sitzung führt wieder zur Profilauswahl und betrifft nur das jeweilige Gerät.
+- Host-/Origin-Prüfung, CSRF-Schutz und validierte Eingaben; parametrisierte Datenbankabfragen und sichere Textausgabe. Diese Maßnahmen verhindern keine bewusste Nutzung durch andere Geräte im erlaubten Heimnetz.
 - Medien werden unter internen Dateinamen außerhalb frei zugänglicher Webordner gespeichert. Auch bekannte direkte Foto- und Thumbnail-Adressen brauchen eine gültige Sitzung.
 - Dateiendung und vom Browser angegebener Dateityp genügen nicht als Uploadprüfung. HTML, SVG und ausführbare Dateien werden nicht als Fotos angenommen. Pfadmanipulation und übergroße Bilder werden abgefangen.
-- Die PWA speichert zunächst nur ihre allgemeinen Oberflächendateien offline. Private API-Antworten und Fotos werden weder im Service Worker dauerhaft abgelegt noch über den normalen HTTP-Cache gespeichert (`Cache-Control: no-store`). Abmelden entfernt private Ansichten aus dem App-Zustand. Bei Zurücknavigation und Rückkehr in die App wird die Sitzung erneut geprüft.
+- Die PWA speichert zunächst nur ihre allgemeinen Oberflächendateien offline. Private API-Antworten und Fotos werden weder im Service Worker dauerhaft abgelegt noch über den normalen HTTP-Cache gespeichert (`Cache-Control: no-store`). Das Zurücksetzen auf die Profilauswahl entfernt die bisherige Ansicht; verspätete Antworten dürfen sie nicht wiederherstellen. Bei Zurücknavigation und Rückkehr in die App wird die Sitzung erneut geprüft.
 - Keine externen Analysewerkzeuge, Werbedienste oder zur Laufzeit nachgeladenen Schriftarten. Protokolle enthalten keine Kennwörter, Sitzungsschlüssel oder vollständigen privaten Formularinhalte.
 - Browserseitiger Schutz ersetzt keinen Schutz vor jemandem mit administrativem Windows-Zugriff. Dateiberechtigungen und vorhandene Laufwerksverschlüsselung werden bei der Einrichtung geprüft.
 
@@ -301,7 +311,7 @@ Zum Datenbankstand gehört ein Manifest der referenzierten Mediendateien mit Pr�
 
 Auch benötigte Betriebseinstellungen und das lokale Zertifikatsmaterial brauchen eine geschützte Sicherung. Der private CA-Schlüssel wird niemals als öffentliche Download-Datei verteilt. Der Wiederherstellungsschlüssel für verschlüsselte Backups muss zusätzlich außerhalb des Hosting-PCs verfügbar sein.
 
-Abnahme: Wiederherstellung in einen leeren Datenordner, Anmeldung, Stichprobe von Räumen und Aufgaben, Öffnen von Originalen und Vorschauen sowie Test eines Vergleichspaars. Alte Sitzungen werden nach einer Wiederherstellung verworfen. Dieser Test wird nach wesentlichen Änderungen des Sicherungsverfahrens und vorgeschlagen vierteljährlich wiederholt.
+Abnahme: Wiederherstellung in einen leeren Datenordner, Profilauswahl, Stichprobe von Räumen und Aufgaben, Öffnen von Originalen und Vorschauen sowie Test eines Vergleichspaars. Alte Sitzungen werden nach einer Wiederherstellung verworfen; ein aus einer älteren App-Version wiederhergestellter Anmeldehash wird beim Start migriert und entfernt. Dieser Test wird nach wesentlichen Änderungen des Sicherungsverfahrens und vorgeschlagen vierteljährlich wiederholt.
 
 Ziel für möglichen Datenverlust: höchstens ein Tag bei täglich erfolgreich laufender Sicherung. Bei ausgeschaltetem PC, fehlendem Sicherungsmedium oder Fehlern gilt diese Zusage nicht; maßgeblich ist der angezeigte letzte erfolgreiche Stand. Eine weitere getrennt aufbewahrte Sicherung schützt zusätzlich gegen Schäden am ganzen Standort und bleibt eine Ausbauoption.
 
@@ -326,7 +336,8 @@ Für reproduzierbare Tests werden eigene Testdaten verwendet. Echte Hausfotos un
 
 | Test | Erwartung |
 | --- | --- |
-| Ohne Haushaltssitzung Projekt-API und direkte Foto-URL öffnen | Kein privater Inhalt wird geliefert, einschließlich Vorschaubildern |
+| Frische App öffnen | Automatische Gerätesitzung, direkt Profilauswahl, keine Kennwortabfrage |
+| Ohne Gerätesitzung Projekt-API und direkte Foto-URL öffnen | Kein Inhalt wird geliefert; eine Sitzung kann im freigegebenen Heimnetz ohne Kennwort angelegt werden |
 | Karla am Handy, Marvin auf dem iPad auswählen | Beide Profilwahlen bleiben unabhängig sichtbar |
 | Formular öffnen und Profil in einem zweiten Tab wechseln | Speichern wird nicht still dem anderen Profil zugeordnet; Eingaben bleiben erhalten |
 | Karla erstellt Aufgabe für Marvin; Marvin bearbeitet sie | Ersteller bleibt Karla, letzte Bearbeitung Marvin, Zuständigkeit weiterhin nachvollziehbar |
@@ -334,6 +345,10 @@ Für reproduzierbare Tests werden eigene Testdaten verwendet. Echte Hausfotos un
 | Mangel ohne Projekt erfassen | Erstellen gelingt; spätere Projektverknüpfung erhält den ursprünglichen Befund |
 | Priorität und geplante Reihenfolge ändern, neu laden | Werte bleiben erhalten und erscheinen auch auf dem zweiten Gerät |
 | Vier Aufgaben anlegen, eine erledigen | Projekt zeigt 25 Prozent; ohne Aufgaben keine fiktiven 100 Prozent |
+| Aufgabe mit zwei Vorgängern planen und zuweisen | Planung möglich; Start und Erledigen erst nach Abschluss beider Vorgänger |
+| Abhängigkeiten im Kreis oder zwischen Projekten setzen | Server und Oberfläche weisen die ungültige Verknüpfung zurück |
+| Erledigten Vorgänger einer bereits laufenden Folgeaufgabe wieder öffnen | Verständlicher Konflikt statt still ungültiger Aufgabenfolge |
+| Zwischen Phasenliste, Board und Zeitachse wechseln | Dieselben Aufgaben, Zuständigkeiten und Termine; keine duplizierten Planungsdaten |
 | Fälligkeit gestern, heute und ohne Datum prüfen | Nur gestern und noch offen erscheint überfällig; Tageswechsel Europe/Berlin funktioniert |
 | Einkauf mit Menge, Einheit und unbekanntem Preis erfassen | Menge/Einheit bleiben erhalten; unbekannter Preis wird nicht zu null Euro |
 | Aufgabe auf zwei Geräten gleichzeitig ändern | Zweiter veralteter Speichervorgang meldet einen Konflikt und behält die eigenen Eingaben |
@@ -341,7 +356,7 @@ Für reproduzierbare Tests werden eigene Testdaten verwendet. Echte Hausfotos un
 | Echte Kameraaufnahmen und Bibliotheksfotos von Pixel und iPhone hochladen | Upload erfolgreich, Orientierung und Darstellung korrekt; eine zuvor ausdrücklich vereinbarte Formateinschränkung wird separat dokumentiert |
 | Falschen Dateityp, übergroße Datei und manipulierten Pfad senden | Upload sicher abgelehnt; keine ausführbare oder frei erreichbare Datei entsteht |
 | Zwei unterschiedliche Bildformate vergleichen | Gewählter Rahmen/Ausschnitt bleibt gespeichert; Finger, Maus und Tastatur funktionieren |
-| Abmelden und zurück navigieren | Private App-Ansichten werden nicht erneut aus einem ungeschützten PWA-Cache gezeigt |
+| Zur Profilauswahl zurückkehren und zurück navigieren | Alte Ansichten erscheinen weder durch einen verspäteten Datenabruf noch aus einem PWA-Cache erneut |
 | WLAN trennen oder Server stoppen | Verbindungsfehler sichtbar; keine erfolgreiche Speicherung vorgetäuscht |
 | PWA auf Pixel, iPhone, iPad und Windows installieren | Startsymbol, Navigation und HTTPS ohne Zertifikatswarnung funktionieren |
 | Zugriff aus Mobilfunk beziehungsweise gesperrtem Gastnetz versuchen | App nicht erreichbar; nur das vorgesehene Heimnetz ist freigegeben |
@@ -358,7 +373,7 @@ Automatisiert geprüft werden insbesondere Berechtigungen, Geschäftregeln, API-
 | PC aus, schlafend oder im Neustart | Kein Zugriff auf Daten | Sichtbarer Verbindungszustand; Nutzungserwartung klären, Energiesparen bewusst einrichten |
 | Lokale Zertifikate oder DNS nicht korrekt | PWA funktioniert am Handy nicht zuverlässig | Früher Test auf allen Geräteklassen; Vertrauen korrekt installieren und dokumentieren |
 | Falsches Profil ausgewählt | Eintrag trägt den falschen Namen | Profil dauerhaft sichtbar, einfacher Wechsel; freiwillige Zuordnung transparent erklären |
-| Gemeinsames Kennwort bekannt geworden | Zugang zum gesamten Haushalt bei Netzwerkerreichbarkeit | Kennwort ändern, Sitzungen widerrufen; Heimnetzzugriff weiterhin begrenzen |
+| Anderes Gerät im freigegebenen Heimnetz | Kann den gesamten Haushalt ohne App-Kennwort nutzen | Heimnetz- und Gastnetztrennung bewusst einrichten; keine öffentliche Freigabe |
 | HEIC nicht lesbar | Bestimmte iPhone-Fotos nicht direkt nutzbar | Formatprobe in M1, Decoder prüfen, Einschränkung vor Fotoabnahme klären |
 | Gleichzeitige Änderungen | Überschreiben fremder Arbeit | Versionsprüfung und Konfliktanzeige |
 | SSD voll oder Bild zu groß | Fehler beim Upload oder Datenverlust | Reserven, Quoten, serverseitige Grenzen und kontrollierte Bildverarbeitung |
@@ -371,4 +386,4 @@ Für den Plan sind die drei Produktentscheidungen beantwortet. Vor der Einrichtu
 
 Die Hardwareangaben Ryzen 5 5600 und 32 GB RAM stammen aus der Info-Datei und wurden nicht separat vermessen. Leistung, Gerätekompatibilität und Wiederherstellung werden erst nach Umsetzung als bestanden bezeichnet.
 
-**Bedeutung des späteren Go:** Umsetzung der hier beschriebenen Grundversion auf dem Windows-PC, nur im Heimnetz, mit gemeinsamem Kennwort und den Profilen Karla/Marvin. Beginn bei den frühen Technikprüfungen und anschließend schrittweiser Aufbau. Videos, XP, Fernzugriff und kostenpflichtige Dienste bleiben außerhalb dieses ersten Umfangs.
+**Freigegebener Umfang:** Grundversion auf dem Windows-PC, nur im Heimnetz, mit frei wählbaren Profilen Karla/Marvin; dazu kennwortfreier App-Zugang, Aufgabenabhängigkeiten, Phasenliste/Board/Zeitachse und überlagerter Fotovergleich. Videos, XP, Fernzugriff und kostenpflichtige Dienste bleiben außerhalb dieses Umfangs.

@@ -35,8 +35,6 @@ import {
   Leaf,
   ListTodo,
   LoaderCircle,
-  LockKeyhole,
-  LogOut,
   Pencil,
   Plus,
   Printer,
@@ -58,6 +56,8 @@ import {
 import {
   localDay,
   progress,
+  TASK_PHASES,
+  taskPhaseLabels,
   type AppState,
   type BaseRecord,
   type Collection,
@@ -71,7 +71,14 @@ import {
   type ShoppingItem,
   type Task,
 } from '../shared/types';
-import { api, ApiError, photoUrl, uploadPhoto } from './api';
+import {
+  api,
+  ApiError,
+  hasSameAuthorContext,
+  photoUrl,
+  uploadPhoto,
+  type AuthorContext,
+} from './api';
 
 type AnyRecord = BaseRecord & Record<string, any>;
 type EditorSpec = {
@@ -80,6 +87,7 @@ type EditorSpec = {
   defaults?: Record<string, any>;
   profileVersion: number;
   profileId: ProfileId | null;
+  csrfToken: string;
 };
 const priorityLabels: Record<Priority, string> = {
   urgent: 'Dringend',
@@ -162,6 +170,25 @@ const go = (path: string) => {
  */
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : 'Das hat nicht geklappt. Bitte versuche es erneut.';
+
+/** Ermittelt unerledigte Vorgänger, einschließlich fehlender Verweise, ohne Aufgaben zu verändern. */
+function waitingFor(task: Pick<Task, 'predecessorIds'>, tasks: Task[]) {
+  return (task.predecessorIds || [])
+    .map((id) => ({ id, task: tasks.find((candidate) => candidate.id === id) }))
+    .filter((entry) => !entry.task || entry.task.status !== 'done');
+}
+
+/** Eine offene Aufgabe ist erst startbereit, wenn alle Vorgänger erledigt sind und keine manuelle Sperre besteht. */
+function isReady(task: Task, tasks: Task[]) {
+  return task.status === 'open' && waitingFor(task, tasks).length === 0;
+}
+
+/** Ordnet Aufgaben dem Board zu; Abhängigkeiten und manuelle Sperren haben Vorrang vor offenen Arbeiten. */
+function boardColumn(task: Task, tasks: Task[]): 'open' | 'waiting' | 'active' | 'done' {
+  if (task.status === 'done') return 'done';
+  if (task.status === 'blocked' || waitingFor(task, tasks).length) return 'waiting';
+  return task.status === 'active' ? 'active' : 'open';
+}
 
 interface AppContextValue {
   state: AppState;
@@ -444,8 +471,8 @@ function Modal({
 }
 
 /**
- * Verwaltet Sitzung, gemeinsame Daten, Hash-Navigation und globale Dialoge. Erst nach erfolgreicher
- * Haushaltsanmeldung und Profilwahl werden private Fachansichten gerendert.
+ * Verwaltet Gerätesitzung, gemeinsame Daten, Hash-Navigation und globale Dialoge. Der Einstieg
+ * erfolgt direkt über die Profilwahl; eine Generation schützt vor verspäteten Sitzungsantworten.
  */
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -458,6 +485,10 @@ export default function App() {
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
   const [initialError, setInitialError] = useState('');
   const pendingRefresh = useRef<Promise<void> | null>(null);
+  const refreshController = useRef<AbortController | null>(null);
+  const sessionEpoch = useRef(0);
+  const sessionTransition = useRef(false);
+  const resetPending = useRef<Session | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * Zeigt jeweils die neueste Rückmeldung und ersetzt deren bisherigen Schließtimer.
@@ -469,35 +500,66 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToast(null), error ? 9000 : 4000);
   }, []);
   /**
-   * Lädt zuerst die Sitzung und bei bestehender Anmeldung den gemeinsamen Datenstand. Gleichzeitige
-   * Aufrufer teilen denselben laufenden Abruf; Verbindungsfehler bleiben als sichtbarer Status
-   * erhalten.
+   * Macht laufende Leseantworten ungültig und beendet ihren Transport. Eine neue Profilaktion
+   * erhält damit eine eigene Generation, die alte Antworten nicht mehr überschreiben dürfen.
    */
-  const refresh = useCallback(async () => {
-    if (pendingRefresh.current) return pendingRefresh.current;
-    // Die gemeinsame Promise umfasst Sitzung und Daten, damit parallele Auslöser dieselbe Runde abwarten.
-    const job = (async () => {
-      try {
-        const current = await api<Session>('/session');
-        setSession(current);
-        if (current.authenticated) setState(await api<AppState>('/state'));
-        else setState(null);
-        setOnline(true);
-        setInitialError('');
-      } catch (error) {
-        setOnline(false);
-        setInitialError(errorText(error));
-      } finally {
-        setLoading(false);
-        pendingRefresh.current = null;
-      }
-    })();
-    pendingRefresh.current = job;
-    return job;
+  const invalidateRefresh = useCallback(() => {
+    sessionEpoch.current += 1;
+    refreshController.current?.abort();
+    refreshController.current = null;
+    pendingRefresh.current = null;
+    return sessionEpoch.current;
   }, []);
+  /**
+   * Liest Sitzung und Daten nach einer Mutation garantiert neu. Nur regelmäßige Leser mit fresh=false
+   * teilen eine Anfrage; Antworten vor einer Mutation oder Profilaktion werden per Generation verworfen.
+   */
+  const refresh = useCallback(
+    async (fresh = true) => {
+      if (sessionTransition.current || resetPending.current) return;
+      if (fresh) invalidateRefresh();
+      if (pendingRefresh.current) return pendingRefresh.current;
+      const epoch = sessionEpoch.current;
+      const controller = new AbortController();
+      refreshController.current = controller;
+      // Sitzung und Daten werden gemeinsam übernommen, damit kein älterer Profilstand dazwischen sichtbar wird.
+      const job = (async () => {
+        try {
+          const current = await api<Session>('/session', { signal: controller.signal });
+          if (epoch !== sessionEpoch.current || controller.signal.aborted) return;
+          const nextState = current.profileId
+            ? await api<AppState>('/state', { signal: controller.signal })
+            : null;
+          if (epoch !== sessionEpoch.current || controller.signal.aborted) return;
+          setSession(current);
+          setState(nextState);
+          if (!current.profileId) {
+            setEditor(null);
+            setProfileOpen(false);
+          }
+          setOnline(true);
+          setInitialError('');
+        } catch (error) {
+          if (epoch !== sessionEpoch.current || controller.signal.aborted) return;
+          setOnline(false);
+          setInitialError(errorText(error));
+        } finally {
+          // Das Ende einer alten Anfrage darf weder den neuen Ladezustand noch dessen Promise zurücksetzen.
+          if (epoch === sessionEpoch.current && !controller.signal.aborted) {
+            setLoading(false);
+            pendingRefresh.current = null;
+            refreshController.current = null;
+          }
+        }
+      })();
+      pendingRefresh.current = job;
+      return job;
+    },
+    [invalidateRefresh],
+  );
   // Navigation, Rückkehr in den Tab und ein sparsamer Timer halten die Ansicht über Geräte hinweg aktuell.
   useEffect(() => {
-    void refresh();
+    void refresh(false);
     /** Übernimmt die Browser-Navigation aus dem Hash; eine leere Route führt zur Übersicht. */
     const onHash = () => setRoute(location.hash.replace(/^#\/?/, '') || 'overview');
     /**
@@ -505,14 +567,14 @@ export default function App() {
      * Abrufe auslösen.
      */
     const onFocus = () => {
-      if (!document.hidden) void refresh();
+      if (!document.hidden) void refresh(false);
     };
     /**
      * Prüft Sitzung und Daten auch nach Wiederherstellung einer Seite durch die Browsernavigation
      * erneut.
      */
     const onPageShow = () => {
-      void refresh();
+      void refresh(false);
     };
     window.addEventListener('hashchange', onHash);
     window.addEventListener('focus', onFocus);
@@ -520,7 +582,7 @@ export default function App() {
     window.addEventListener('online', onFocus);
     document.addEventListener('visibilitychange', onFocus);
     const poll = setInterval(() => {
-      if (!document.hidden) void refresh();
+      if (!document.hidden) void refresh(false);
     }, 10000);
     // Alle registrierten Quellen entfernen, damit Remounts keine doppelten Listener oder Timer hinterlassen.
     return () => {
@@ -549,6 +611,7 @@ export default function App() {
         defaults,
         profileVersion: session.profileVersion,
         profileId: session.profileId,
+        csrfToken: session.csrfToken,
       });
     },
     [session],
@@ -574,18 +637,84 @@ export default function App() {
     }
   };
   /**
-   * Beendet die Haushaltssitzung auf dem Server und entfernt anschließend private Ansichten und
-   * offene Dialoge aus dem lokalen Zustand.
+   * Wählt ein Profil in der aktuellen Gerätesitzung. Während des Wechsels ruht das Polling;
+   * die direkte Serverantwort ersetzt den Profilstand, bevor neue Daten geladen werden.
    */
-  const logout = async () => {
+  const chooseProfile = async (profileId: ProfileId) => {
+    if (!session || sessionTransition.current) return;
+    const previous = session;
+    const epoch = invalidateRefresh();
+    sessionTransition.current = true;
     try {
-      await api('/logout', { method: 'POST', session, body: {} });
-      setState(null);
-      setEditor(null);
+      const nextSession = await api<Session>('/profile', {
+        method: 'POST',
+        session: previous,
+        body: { profileId, profileVersion: previous.profileVersion },
+      });
+      if (epoch !== sessionEpoch.current) return;
+      setSession(nextSession);
+      resetPending.current = null;
       setProfileOpen(false);
-      await refresh();
+      const nextState = await api<AppState>('/state');
+      if (epoch !== sessionEpoch.current) return;
+      setState(nextState);
+      setOnline(true);
+      setInitialError('');
     } catch (error) {
-      notify(errorText(error), true);
+      if (epoch !== sessionEpoch.current) return;
+      setInitialError(errorText(error));
+      if (error instanceof ApiError && error.status === 0) setOnline(false);
+      throw error;
+    } finally {
+      if (epoch === sessionEpoch.current) {
+        sessionTransition.current = false;
+        setLoading(false);
+      }
+    }
+  };
+  /**
+   * Kehrt sofort in einen neutralen Zustand zurück und ersetzt die Gerätesitzung serverseitig.
+   * Die DELETE-Antwort wird direkt übernommen. Nach einem Übertragungsfehler bleibt das Polling
+   * gesperrt, bis ein bewusster Wiederholungsversuch den tatsächlichen Sitzungsstand geklärt hat.
+   */
+  const resetProfile = async () => {
+    if (sessionTransition.current) return;
+    const retry = !!resetPending.current;
+    const previous = resetPending.current || session;
+    if (!previous) return;
+    const epoch = invalidateRefresh();
+    sessionTransition.current = true;
+    resetPending.current = previous;
+    setSession(null);
+    setState(null);
+    setEditor(null);
+    setProfileOpen(false);
+    setToast(null);
+    setInitialError('');
+    setLoading(true);
+    try {
+      // Bei verlorener DELETE-Antwort können Cookie und CSRF-Token bereits erneuert sein.
+      const current = retry ? await api<Session>('/session') : previous;
+      if (epoch !== sessionEpoch.current) return;
+      const nextSession =
+        retry && !current.profileId
+          ? current
+          : await api<Session>('/session', { method: 'DELETE', session: current });
+      if (epoch !== sessionEpoch.current) return;
+      resetPending.current = null;
+      setSession(nextSession);
+      setOnline(true);
+    } catch (error) {
+      if (epoch !== sessionEpoch.current) return;
+      setInitialError(
+        `Die Profilauswahl konnte noch nicht zurückgesetzt werden. ${errorText(error)}`,
+      );
+      setOnline(false);
+    } finally {
+      if (epoch === sessionEpoch.current) {
+        sessionTransition.current = false;
+        setLoading(false);
+      }
     }
   };
   if (loading)
@@ -604,14 +733,17 @@ export default function App() {
           <WifiOff className="auth-symbol" />
           <h1>Wir finden euren Zuhause-PC gerade nicht.</h1>
           <p>{initialError}</p>
-          <button className="button primary" onClick={() => void refresh()}>
+          <button
+            className="button primary"
+            onClick={() => void (resetPending.current ? resetProfile() : refresh())}
+          >
             <RefreshCw size={17} />
             Erneut versuchen
           </button>
         </div>
       </div>
     );
-  if (!session.authenticated) return <Auth session={session} complete={refresh} />;
+  if (!session.profileId) return <ProfilePicker session={session} chooseProfile={chooseProfile} />;
   if (!state)
     return (
       <div className="loading-screen">
@@ -621,18 +753,6 @@ export default function App() {
           Erneut laden
         </button>
       </div>
-    );
-  if (!session.profileId)
-    return (
-      <ProfilePicker
-        session={session}
-        complete={async () => {
-          // Erst die bestätigte Profilwahl erneut einlesen, dann den Auswahlzustand schließen.
-          await refresh();
-          setProfileOpen(false);
-        }}
-        logout={logout}
-      />
     );
   const section = route.split('/')[0];
   const nav = [
@@ -747,7 +867,7 @@ export default function App() {
             ) : section === 'house' ? (
               <HouseView />
             ) : section === 'settings' ? (
-              <SettingsView logout={logout} />
+              <SettingsView resetProfile={resetProfile} openProfiles={() => setProfileOpen(true)} />
             ) : (
               <Dashboard />
             )}
@@ -776,12 +896,9 @@ export default function App() {
         <Modal title="Wer ist gerade hier?" close={() => setProfileOpen(false)}>
           <ProfilePicker
             session={session}
-            complete={async () => {
-              // Nach dem Wechsel erhalten alle Fachansichten den neuen Sitzungsstand.
-              await refresh();
-              setProfileOpen(false);
-            }}
-            logout={logout}
+            chooseProfile={chooseProfile}
+            resetProfile={resetProfile}
+            close={() => setProfileOpen(false)}
             embedded
           />
         </Modal>
@@ -803,151 +920,30 @@ export default function App() {
 }
 
 /**
- * Bündelt Ersteinrichtung und Anmeldung mit dem gemeinsamen Haushaltskennwort. Kennwörter bleiben
- * im Formularzustand und werden weder in Browser-Speicher noch in URLs geschrieben.
- */
-function Auth({ session, complete }: { session: Session; complete: () => Promise<void> }) {
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  /**
-   * Prüft bei der Ersteinrichtung die Kennwortwiederholung und sendet die passende Setup- oder
-   * Login-Anfrage. Fehler lassen das Formular offen; Erfolg startet die erneute Sitzungsprüfung.
-   */
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setError('');
-    if (!session.configured && password !== confirm) {
-      setError('Die beiden Kennwörter stimmen noch nicht überein.');
-      return;
-    }
-    setBusy(true);
-    try {
-      await api(session.configured ? '/login' : '/setup', { method: 'POST', body: { password } });
-      await complete();
-    } catch (error) {
-      setError(errorText(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <div className="auth-page">
-      <div className="auth-story">
-        <Brand />
-        <div>
-          <div className="eyebrow">EUER NÄCHSTES KAPITEL</div>
-          <h1>
-            Aus vier Wänden
-            <br />
-            wird euer Zuhause.
-          </h1>
-          <p>
-            Pläne sammeln, gemeinsam anpacken
-            <br />
-            und jeden kleinen Fortschritt festhalten.
-          </p>
-          <HouseDrawing />
-        </div>
-        <span className="auth-story-footer">
-          <Heart size={16} />
-          Für Karla & Marvin. Und all eure Ideen.
-        </span>
-      </div>
-      <div className="auth-form-wrap">
-        <form className="auth-card" onSubmit={submit}>
-          <span className="auth-icon">
-            <House size={27} />
-          </span>
-          <div className="eyebrow">UNSER ZUHAUSE</div>
-          <h1>{session.configured ? 'Schön, dass du da bist.' : 'Macht es euch gemütlich.'}</h1>
-          <p>
-            {session.configured
-              ? 'Öffne euer Renovierungsbuch mit dem gemeinsamen Haushaltskennwort.'
-              : 'Legt einmal euer gemeinsames Haushaltskennwort fest. Danach wählt ihr einfach Karla oder Marvin.'}
-          </p>
-          <label>
-            Gemeinsames Kennwort
-            <input
-              type="password"
-              autoComplete={session.configured ? 'current-password' : 'new-password'}
-              minLength={session.configured ? undefined : 12}
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder={session.configured ? 'Euer Haushaltskennwort' : 'Mindestens 12 Zeichen'}
-              autoFocus
-            />
-          </label>
-          {!session.configured && (
-            <label>
-              Kennwort wiederholen
-              <input
-                type="password"
-                autoComplete="new-password"
-                required
-                minLength={12}
-                value={confirm}
-                onChange={(event) => setConfirm(event.target.value)}
-              />
-            </label>
-          )}
-          {error && (
-            <div className="form-error" role="alert">
-              {error}
-            </div>
-          )}
-          <button className="button primary full" disabled={busy}>
-            {busy ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}{' '}
-            {session.configured ? 'Zuhause öffnen' : 'Unser Zuhause einrichten'}
-          </button>
-          <p className="auth-footnote">
-            <ShieldCheck size={16} />
-            Privat auf eurem PC · Gemeinsam geschützt
-          </p>
-          <p className="tiny-note">
-            Auf diesem Gerät bleibt die Anmeldung bis zu 30 Tage gespeichert. Nutzt das nur auf
-            euren eigenen Geräten.
-          </p>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Bietet die freiwillige Auswahl Karla/Marvin innerhalb einer bereits angemeldeten
- * Haushaltssitzung. Die eingebettete Variante dient auch als mobiler Zugang zu Einstellungen und
- * Abmeldung.
+ * Bietet den direkten Einstieg über Karla oder Marvin. Die Auswahl kennzeichnet Einträge und
+ * bleibt auf diesem Gerät erhalten; sie ist kein persönlicher Zugriffsschutz.
  */
 function ProfilePicker({
   session,
-  complete,
-  logout,
+  chooseProfile,
+  resetProfile,
+  close,
   embedded = false,
 }: {
   session: Session;
-  complete: () => Promise<void>;
-  logout: () => Promise<void>;
+  chooseProfile: (id: ProfileId) => Promise<void>;
+  resetProfile?: () => Promise<void>;
+  close?: () => void;
   embedded?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  /**
-   * Wechselt das Profil mit der erwarteten Sitzungs-Profilversion. Ein zwischenzeitlicher Wechsel
-   * in einem anderen Tab führt zu einer Fehlermeldung, bevor der Aufrufer die Auswahl abschließt.
-   */
+  /** Sperrt weitere Klicks während der Profilwahl und lässt Fehler direkt bei der Auswahl stehen. */
   async function choose(id: ProfileId) {
     setBusy(true);
     setError('');
     try {
-      await api<Session>('/profile', {
-        method: 'POST',
-        session,
-        body: { profileId: id, profileVersion: session.profileVersion },
-      });
-      await complete();
+      await chooseProfile(id);
     } catch (error) {
       setError(errorText(error));
     } finally {
@@ -980,28 +976,33 @@ function ProfilePicker({
         </div>
       )}
       <p className="tiny-note">
-        Ihr teilt euch einen geschützten Zugang. Die Namen sind eure freiwillige Zuordnung, keine
-        getrennten Anmeldungen.
+        Eure Daten liegen gemeinsam im Heimnetz. Die Profilwahl zeigt, von wem ein Eintrag stammt.
       </p>
-      <div className="profile-footer">
-        {embedded && (
+      {embedded && (
+        <div className="profile-footer">
           <button
+            disabled={busy}
             className="button secondary"
-            onClick={async () => {
-              // Den Profildialog über seinen Aufrufer schließen, bevor die Einstellungsroute geöffnet wird.
-              await complete();
+            onClick={() => {
+              close?.();
               go('settings');
             }}
           >
             <Settings size={16} />
             Einstellungen
           </button>
-        )}
-        <button className="button text-button" onClick={() => void logout()}>
-          <LogOut size={16} />
-          Haushalt abmelden
-        </button>
-      </div>
+          {resetProfile && (
+            <button
+              disabled={busy}
+              className="button text-button"
+              onClick={() => void resetProfile()}
+            >
+              <Users size={16} />
+              Zur Profilauswahl
+            </button>
+          )}
+        </div>
+      )}
     </>
   );
   return embedded ? (
@@ -1012,6 +1013,10 @@ function ProfilePicker({
         <Brand />
         <h1>Wer ist gerade hier?</h1>
         {content}
+        <p className="profile-home-note">
+          <Wifi size={14} />
+          Bei euch zu Hause. Für eure gemeinsamen Pläne.
+        </p>
       </div>
     </div>
   );
@@ -1034,6 +1039,7 @@ function Dashboard() {
   const important = [...pending]
     .sort(
       (a, b) =>
+        Number(isReady(b, state.tasks)) - Number(isReady(a, state.tasks)) ||
         (a.dueDate || '9999').localeCompare(b.dueDate || '9999') ||
         priorityOrder[a.priority] - priorityOrder[b.priority],
     )
@@ -1525,11 +1531,14 @@ function TaskRow({ task, compact = false }: { task: Task; compact?: boolean }) {
   const [busy, setBusy] = useState(false);
   const late = task.status !== 'done' && task.dueDate && task.dueDate < localDay();
   const project = state.projects.find((p) => p.id === task.projectId);
+  const predecessors = waitingFor(task, state.tasks);
+  const blocked = task.status !== 'done' && (task.status === 'blocked' || predecessors.length > 0);
   /**
    * Wechselt zwischen erledigt und offen und sperrt die Aktion während der Anfrage. Der sichtbare
    * Datenstand ändert sich erst nach Bestätigung des Servers.
    */
   async function toggle() {
+    if (blocked) return;
     setBusy(true);
     await mutate('tasks', task, { status: task.status === 'done' ? 'open' : 'done' });
     setBusy(false);
@@ -1540,7 +1549,12 @@ function TaskRow({ task, compact = false }: { task: Task; compact?: boolean }) {
     >
       <button
         className={`check-button ${task.status === 'done' ? 'checked' : ''}`}
-        disabled={busy || !!task.archivedAt}
+        disabled={busy || !!task.archivedAt || blocked}
+        title={
+          blocked
+            ? 'Erst die Vorgänger erledigen beziehungsweise die manuelle Sperre aufheben.'
+            : undefined
+        }
         aria-label={
           task.status === 'done' ? `${task.title} wieder öffnen` : `${task.title} erledigen`
         }
@@ -1556,6 +1570,7 @@ function TaskRow({ task, compact = false }: { task: Task; compact?: boolean }) {
         <strong>{task.title}</strong>
         <span className="task-meta">
           {project && <span>{project.title}</span>}
+          {!compact && <span className="phase-label">{taskPhaseLabels[task.phase]}</span>}
           {task.dueDate && (
             <span className={late ? 'late' : ''}>
               <CalendarDays size={12} />
@@ -1567,6 +1582,16 @@ function TaskRow({ task, compact = false }: { task: Task; compact?: boolean }) {
             <span className={`mini-status ${task.status}`}>{taskStatus[task.status]}</span>
           )}
         </span>
+        {predecessors.length > 0 && (
+          <span className="task-waiting">
+            <CircleAlert size={12} />
+            Wartet auf:{' '}
+            {predecessors
+              .map((entry) => entry.task?.title || 'Nicht mehr verfügbare Aufgabe')
+              .join(', ')}
+          </span>
+        )}
+        {task.status === 'blocked' && <span className="task-waiting">Manuell gesperrt</span>}
       </button>
       <div className="task-row-end">
         {!compact && <PriorityBadge value={task.priority} />}
@@ -1603,6 +1628,8 @@ function TasksView({ projectId, embedded = false }: { projectId?: string; embedd
         (projectFilter === 'all' || t.projectId === projectFilter) &&
         (status === 'all' ||
           (status === 'open' && t.status !== 'done') ||
+          (status === 'ready' && isReady(t, state.tasks)) ||
+          (status === 'waiting' && boardColumn(t, state.tasks) === 'waiting') ||
           (status === 'overdue' && t.status !== 'done' && !!t.dueDate && t.dueDate < localDay()) ||
           t.status === status) &&
         (person === 'all' ||
@@ -1668,6 +1695,8 @@ function TasksView({ projectId, embedded = false }: { projectId?: string; embedd
           <span className="sr-only">Aufgabenstatus</span>
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="open">Noch offen</option>
+            <option value="ready">Startbereit</option>
+            <option value="waiting">Wartet</option>
             <option value="all">Jeder Status</option>
             <option value="active">In Arbeit</option>
             <option value="blocked">Blockiert</option>
@@ -2190,6 +2219,7 @@ function ProjectDetail({ id }: { id: string }) {
       <div className="project-tabs" role="tablist" aria-label="Projektbereiche">
         {[
           { key: 'overview', label: 'Übersicht', icon: House },
+          { key: 'planning', label: 'Planung', icon: ClipboardList },
           { key: 'tasks', label: 'Aufgaben', icon: ListTodo },
           { key: 'shopping', label: 'Einkauf', icon: ShoppingBasket },
           { key: 'photos', label: 'Fotos', icon: Images },
@@ -2284,6 +2314,8 @@ function ProjectDetail({ id }: { id: string }) {
             </button>
           </div>
         </div>
+      ) : tab === 'planning' ? (
+        <ProjectPlanning project={project} />
       ) : tab === 'tasks' ? (
         <TasksView projectId={id} embedded />
       ) : tab === 'shopping' ? (
@@ -2318,6 +2350,386 @@ function ProjectDetail({ id }: { id: string }) {
         </Modal>
       )}
     </>
+  );
+}
+
+/**
+ * Vereint Listen-, Board- und Zeitachsenansicht desselben Projektbestands. Phasensummen werden
+ * ausschließlich aus nicht archivierten Aufgaben gebildet; Ansichtswechsel ändern keine Termine.
+ */
+function ProjectPlanning({ project }: { project: Project }) {
+  const { state, edit } = useApp();
+  const [view, setView] = useState<'list' | 'board' | 'timeline'>('list');
+  const [grouped, setGrouped] = useState(true);
+  const [phase, setPhase] = useState('all');
+  const tasks = active(state.tasks).filter((task) => task.projectId === project.id);
+  const visible = tasks
+    .filter((task) => phase === 'all' || task.phase === phase)
+    .sort(
+      (a, b) =>
+        TASK_PHASES.indexOf(a.phase) - TASK_PHASES.indexOf(b.phase) ||
+        priorityOrder[a.priority] - priorityOrder[b.priority] ||
+        (a.dueDate || '9999').localeCompare(b.dueDate || '9999'),
+    );
+  const completed = tasks.filter((task) => task.status === 'done').length;
+  const ready = tasks.filter((task) => isReady(task, state.tasks)).length;
+  const waiting = tasks.filter((task) => boardColumn(task, state.tasks) === 'waiting').length;
+  return (
+    <section className="project-planning">
+      <div className="section-title planning-heading">
+        <div>
+          <h2>Ein Plan, der zusammenpasst</h2>
+          <p className="subtle">
+            {completed} von {tasks.length} Aufgaben geschafft · {ready} startbereit · {waiting}{' '}
+            warten
+          </p>
+        </div>
+        <button
+          className="button primary"
+          onClick={() =>
+            edit('tasks', undefined, {
+              projectId: project.id,
+              roomId: project.roomId,
+              ...(phase !== 'all' ? { phase } : {}),
+            })
+          }
+        >
+          <Plus size={17} />
+          Aufgabe anlegen
+        </button>
+      </div>
+      <div className="phase-overview">
+        {TASK_PHASES.map((key, index) => {
+          const entries = tasks.filter((task) => task.phase === key);
+          const done = entries.filter((task) => task.status === 'done').length;
+          return (
+            <button
+              key={key}
+              className={`phase-summary ${phase === key ? 'selected' : ''}`}
+              onClick={() => setPhase(phase === key ? 'all' : key)}
+              aria-pressed={phase === key}
+            >
+              <span className="phase-summary-name">
+                <span>0{index + 1}</span>
+                <strong>{taskPhaseLabels[key]}</strong>
+              </span>
+              <span className="phase-summary-count">
+                {done} von {entries.length} erledigt
+              </span>
+              <span className="progress-track">
+                <span style={{ width: `${entries.length ? (done / entries.length) * 100 : 0}%` }} />
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="toolbar planning-toolbar">
+        <div className="segmented" aria-label="Planungsansicht">
+          {(['list', 'board', 'timeline'] as const).map((key) => (
+            <button
+              key={key}
+              className={view === key ? 'selected' : ''}
+              aria-pressed={view === key}
+              onClick={() => setView(key)}
+            >
+              {key === 'list' ? (
+                <ListTodo size={16} />
+              ) : key === 'board' ? (
+                <ClipboardList size={16} />
+              ) : (
+                <CalendarDays size={16} />
+              )}
+              {{ list: 'Liste', board: 'Board', timeline: 'Zeitachse' }[key]}
+            </button>
+          ))}
+        </div>
+        <div className="planning-options">
+          <label>
+            <span className="sr-only">Projektphase filtern</span>
+            <select value={phase} onChange={(event) => setPhase(event.target.value)}>
+              <option value="all">Alle Phasen</option>
+              {TASK_PHASES.map((key) => (
+                <option key={key} value={key}>
+                  {taskPhaseLabels[key]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {view === 'list' && (
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={grouped}
+                onChange={(event) => setGrouped(event.target.checked)}
+              />
+              Nach Phase gruppieren
+            </label>
+          )}
+        </div>
+      </div>
+      {tasks.length === 0 ? (
+        <div className="panel">
+          <Empty
+            icon={<ClipboardList />}
+            title="Schritt für Schritt zum fertigen Raum"
+            action="Ersten Schritt planen"
+            onAction={() =>
+              edit('tasks', undefined, { projectId: project.id, roomId: project.roomId })
+            }
+          >
+            Teilt euer Vorhaben in Planung, Vorbereitung, Renovierung und Abschluss ein. Vorgänger
+            halten die richtige Reihenfolge fest.
+          </Empty>
+        </div>
+      ) : view === 'list' ? (
+        visible.length ? (
+          grouped ? (
+            <div className="phase-task-groups">
+              {TASK_PHASES.filter((key) => visible.some((task) => task.phase === key)).map(
+                (key) => (
+                  <section className="panel" key={key}>
+                    <div className="list-heading">
+                      <h3>{taskPhaseLabels[key]}</h3>
+                      <span className="count">
+                        {visible.filter((task) => task.phase === key).length}
+                      </span>
+                    </div>
+                    {visible
+                      .filter((task) => task.phase === key)
+                      .map((task) => (
+                        <TaskRow key={task.id} task={task} />
+                      ))}
+                  </section>
+                ),
+              )}
+            </div>
+          ) : (
+            <div className="panel">
+              {visible.map((task) => (
+                <TaskRow key={task.id} task={task} />
+              ))}
+            </div>
+          )
+        ) : (
+          <div className="panel">
+            <Empty title="Diese Phase hat noch Platz">
+              Ergänzt Aufgaben für diese Phase oder zeigt wieder alle Phasen an.
+            </Empty>
+          </div>
+        )
+      ) : view === 'board' ? (
+        <div className="planning-board">
+          {(['open', 'waiting', 'active', 'done'] as const).map((column) => {
+            const entries = visible.filter((task) => boardColumn(task, state.tasks) === column);
+            return (
+              <section className={`board-column ${column}`} key={column}>
+                <header>
+                  <h3>
+                    {
+                      { open: 'Offen', waiting: 'Wartet', active: 'In Arbeit', done: 'Erledigt' }[
+                        column
+                      ]
+                    }
+                  </h3>
+                  <span className="count">{entries.length}</span>
+                </header>
+                {entries.map((task) => (
+                  <PlanningTaskCard key={task.id} task={task} />
+                ))}
+                {!entries.length && <p className="board-empty">Hier liegt gerade nichts.</p>}
+              </section>
+            );
+          })}
+        </div>
+      ) : (
+        <PlanningTimeline tasks={visible} />
+      )}
+      <p className="planning-footnote">
+        Vorgänger müssen zuerst erledigt sein. Eine manuelle Sperre bleibt bestehen, bis ihr sie
+        bewusst aufhebt. Termine werden nicht automatisch verschoben.
+      </p>
+    </section>
+  );
+}
+
+/** Zeigt eine Board-Aufgabe mit verständlicher Sperrursache und einer tastaturbedienbaren nächsten Aktion. */
+function PlanningTaskCard({ task }: { task: Task }) {
+  const { state, edit, mutate } = useApp();
+  const [busy, setBusy] = useState(false);
+  const predecessors = waitingFor(task, state.tasks);
+  const action =
+    task.status === 'done'
+      ? 'open'
+      : task.status === 'blocked'
+        ? 'open'
+        : task.status === 'active'
+          ? 'done'
+          : 'active';
+  const disabled = busy || (['active', 'done'].includes(action) && predecessors.length > 0);
+  /** Verändert nur den bestätigten Aufgabenstatus; Versions- und Abhängigkeitsprüfungen bleiben zusätzlich serverseitig verbindlich. */
+  async function advance() {
+    if (disabled) return;
+    setBusy(true);
+    try {
+      await mutate('tasks', task, { status: action });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <article className="planning-task-card">
+      <div className="board-card-top">
+        <span className="phase-label">{taskPhaseLabels[task.phase]}</span>
+        <PriorityBadge value={task.priority} />
+      </div>
+      <button className="heading-button" onClick={() => edit('tasks', task)}>
+        <h4>{task.title}</h4>
+      </button>
+      <Assignees ids={task.assignees} />
+      {task.dueDate && (
+        <span
+          className={`date-label ${task.status !== 'done' && task.dueDate < localDay() ? 'late' : ''}`}
+        >
+          <CalendarDays size={13} />
+          {shortDate(task.dueDate)}
+        </span>
+      )}
+      {predecessors.length > 0 && (
+        <p className="task-waiting">
+          Wartet auf:{' '}
+          {predecessors
+            .map((entry) => entry.task?.title || 'Nicht mehr verfügbare Aufgabe')
+            .join(', ')}
+        </p>
+      )}
+      {task.status === 'blocked' && <p className="task-waiting">Manuell gesperrt</p>}
+      <div className="board-card-actions">
+        <button className="button secondary" onClick={() => void advance()} disabled={disabled}>
+          {busy ? (
+            <LoaderCircle className="spin" size={14} />
+          ) : task.status === 'done' ? (
+            <RefreshCw size={14} />
+          ) : (
+            <ArrowRight size={14} />
+          )}{' '}
+          {task.status === 'done'
+            ? 'Wieder öffnen'
+            : task.status === 'blocked'
+              ? 'Sperre aufheben'
+              : predecessors.length
+                ? 'Wartet'
+                : task.status === 'active'
+                  ? 'Erledigen'
+                  : 'Starten'}
+        </button>
+        <button
+          className="icon-button"
+          onClick={() => edit('tasks', task)}
+          aria-label={`${task.title} bearbeiten`}
+        >
+          <Pencil size={14} />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+/** Rechnet ein gespeichertes Tagesdatum in einen UTC-Tageswert um, damit Sommerzeit keine Balkenbreiten verändert. */
+function planningDay(value: string) {
+  return Date.parse(`${value}T12:00:00Z`) / 86_400_000;
+}
+
+/** Zeichnet nur ausdrücklich gesetzte Start- und Fälligkeitstage; Aufgaben ohne Datum stehen separat darunter. */
+function PlanningTimeline({ tasks }: { tasks: Task[] }) {
+  const { state, edit } = useApp();
+  const dated = tasks.filter((task) => task.startDate || task.dueDate);
+  const undated = tasks.filter((task) => !task.startDate && !task.dueDate);
+  const dates = dated.flatMap((task) =>
+    [task.startDate, task.dueDate].filter((date): date is string => !!date).map(planningDay),
+  );
+  const first = dates.length ? Math.min(...dates) : planningDay(localDay());
+  const last = dates.length ? Math.max(...dates) : first;
+  const span = Math.max(last - first + 1, 7);
+  const ticks = Array.from({ length: Math.min(7, span) }, (_, index) =>
+    Math.floor((index * (span - 1)) / Math.min(6, span - 1)),
+  );
+  return (
+    <div className="planning-timeline">
+      {dated.length ? (
+        <div
+          className="timeline-scroll"
+          tabIndex={0}
+          aria-label="Zeitachse der Aufgaben; bei schmalem Bildschirm seitlich scrollen"
+        >
+          <div className="gantt-grid">
+            <div className="gantt-header">
+              <strong>Aufgabe & Zeitraum</strong>
+              <div className="gantt-dates">
+                {ticks.map((day) => (
+                  <span key={day} style={{ left: `${(day / span) * 100}%` }}>
+                    {shortDate(new Date((first + day) * 86_400_000).toISOString().slice(0, 10))}
+                  </span>
+                ))}
+              </div>
+            </div>
+            {dated.map((task) => {
+              const start = planningDay(task.startDate || task.dueDate!);
+              const end = planningDay(task.dueDate || task.startDate!);
+              const column = boardColumn(task, state.tasks);
+              const label =
+                task.startDate && task.dueDate
+                  ? `${shortDate(task.startDate)} – ${shortDate(task.dueDate)}`
+                  : task.startDate
+                    ? `Beginn ${shortDate(task.startDate)} · Ende offen`
+                    : `Fällig ${shortDate(task.dueDate!)} · Beginn offen`;
+              return (
+                <div className="gantt-row" key={task.id}>
+                  <button className="gantt-task-label" onClick={() => edit('tasks', task)}>
+                    <strong>{task.title}</strong>
+                    <small>{label}</small>
+                  </button>
+                  <div className="gantt-lane">
+                    <button
+                      className={`gantt-bar ${column} ${!task.startDate || !task.dueDate ? 'milestone' : ''}`}
+                      style={{
+                        left: `${((start - first) / span) * 100}%`,
+                        width: `${(Math.max(1, end - start + 1) / span) * 100}%`,
+                      }}
+                      onClick={() => edit('tasks', task)}
+                      aria-label={`${task.title}: ${label}, ${column === 'waiting' ? 'wartet' : taskStatus[task.status]}`}
+                      title={`${task.title} · ${label}`}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="panel">
+          <Empty icon={<CalendarDays />} title="Eure Termine sind noch offen">
+            Tragt einen Beginn oder eine Fälligkeit ein, damit die Aufgabe auf der Zeitachse
+            erscheint.
+          </Empty>
+        </div>
+      )}
+      {!!dated.length && (
+        <p className="tiny-note">
+          Ein einzelnes Datum wird als Markierung angezeigt. Der andere Termin bleibt offen.
+        </p>
+      )}
+      {undated.length > 0 && (
+        <section className="panel undated-tasks">
+          <div className="list-heading">
+            <h3>Noch ohne Termin</h3>
+            <span className="count">{undated.length}</span>
+          </div>
+          {undated.map((task) => (
+            <TaskRow key={task.id} task={task} />
+          ))}
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -2417,15 +2829,19 @@ function PhotoGallery({ projectId, defectId }: { projectId?: string; defectId?: 
    * Legt ein Foto über deletedAt in den Papierkorb oder stellt es wieder her. Erst nach einer
    * bestätigten Mutation wird der Fotodialog geschlossen.
    */
-  async function remove(photo: Photo) {
-    if (
-      await mutate('photos', photo, {
+  async function remove(photo: Photo, authorSession: Session) {
+    await api(`/photos/${photo.id}`, {
+      method: 'PATCH',
+      session: authorSession,
+      body: {
         deletedAt: photo.deletedAt ? null : new Date().toISOString(),
-      })
-    ) {
-      setView(null);
-      notify(photo.deletedAt ? 'Foto wiederhergestellt.' : 'Foto liegt jetzt im Papierkorb.');
-    }
+        version: photo.version,
+        profileVersion: authorSession.profileVersion,
+      },
+    });
+    await refresh();
+    setView(null);
+    notify(photo.deletedAt ? 'Foto wiederhergestellt.' : 'Foto liegt jetzt im Papierkorb.');
   }
   return (
     <>
@@ -2610,28 +3026,91 @@ function CompareSlider({ comparison }: { comparison: Comparison | Record<string,
     transformOrigin: `${comparison[`${side}X`]}% ${comparison[`${side}Y`]}%`,
   });
   return (
-    <div className="compare-frame">
-      <img src={photoUrl(comparison.afterId)} style={style('after')} alt="Nachher" />
-      <div className="compare-overlay" style={{ clipPath: `inset(0 ${100 - value}% 0 0)` }}>
-        <img src={photoUrl(comparison.beforeId)} style={style('before')} alt="Vorher" />
+    <div className="compare-view">
+      <div className="compare-frame">
+        <img src={photoUrl(comparison.afterId)} style={style('after')} alt="Nachher" />
+        <div className="compare-overlay" style={{ clipPath: `inset(0 ${100 - value}% 0 0)` }}>
+          <img src={photoUrl(comparison.beforeId)} style={style('before')} alt="Vorher" />
+        </div>
+        <span className="comparison-label before">Vorher</span>
+        <span className="comparison-label after">Nachher</span>
+        <div className="compare-line" style={{ left: `${value}%` }}>
+          <span>
+            <ArrowLeft size={16} />
+            <ArrowRight size={16} />
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value={value}
+          onChange={(e) => setValue(Number(e.target.value))}
+          aria-label="Vorher-Nachher-Vergleich"
+          aria-valuetext={`${value} Prozent Vorher sichtbar`}
+        />
       </div>
-      <span className="comparison-label before">Vorher</span>
-      <span className="comparison-label after">Nachher</span>
-      <div className="compare-line" style={{ left: `${value}%` }}>
-        <span>
-          <ArrowLeft size={16} />
-          <ArrowRight size={16} />
-        </span>
+      <div className="compare-controls" aria-label="Bildvergleich einstellen">
+        <button
+          type="button"
+          className="button secondary"
+          onClick={() => setValue(100)}
+          aria-pressed={value === 100}
+        >
+          Nur Vorher
+        </button>
+        <button
+          type="button"
+          className="button secondary"
+          onClick={() => setValue(50)}
+          aria-pressed={value === 50}
+        >
+          <SlidersHorizontal size={15} />
+          Vergleichen
+        </button>
+        <button
+          type="button"
+          className="button secondary"
+          onClick={() => setValue(0)}
+          aria-pressed={value === 0}
+        >
+          Nur Nachher
+        </button>
       </div>
-      <input
-        type="range"
-        min="0"
-        max="100"
-        value={value}
-        onChange={(e) => setValue(Number(e.target.value))}
-        aria-label="Vorher-Nachher-Vergleich"
-        aria-valuetext={`${value} Prozent Vorher sichtbar`}
-      />
+    </div>
+  );
+}
+
+/** Erklärt einen geänderten Autorenkontext und verlangt eine ausdrückliche Bestätigung vor weiteren Änderungen. */
+function AuthorContextNotice({
+  opened,
+  current,
+  busy,
+  confirm,
+}: {
+  opened: AuthorContext;
+  current: Session;
+  busy: boolean;
+  confirm: () => void;
+}) {
+  if (hasSameAuthorContext(opened, current)) return null;
+  return (
+    <div className="conflict-box" role="alert">
+      <h3>Bitte das Namensschild bestätigen</h3>
+      <p>
+        Die Sitzung oder das Profil hat sich seit dem Öffnen geändert. Deine Eingaben bleiben
+        erhalten. Bestätige das aktuelle Namensschild, bevor du speicherst, oder öffne das Formular
+        erneut.
+      </p>
+      <button
+        type="button"
+        className="button secondary"
+        disabled={busy || !current.profileId}
+        onClick={confirm}
+      >
+        Unter {name(current.profileId)} weiterbearbeiten
+      </button>
     </div>
   );
 }
@@ -2651,7 +3130,8 @@ function UploadDialog({
 }) {
   const { session, refresh, notify } = useApp();
   // Anders als der laufend aktualisierte Sitzungskontext bleibt dieses Profil für den offenen Upload fest.
-  const initial = useRef(session);
+  const [initial, setInitial] = useState(session);
+  const contextChanged = !hasSameAuthorContext(initial, session);
   const [files, setFiles] = useState<File[]>([]);
   const [category, setCategory] = useState('before');
   const [title, setTitle] = useState('');
@@ -2661,6 +3141,12 @@ function UploadDialog({
   const [error, setError] = useState('');
   const [done, setDone] = useState(0);
   const requests = useRef(new Map<File, string>());
+  /** Übernimmt das aktuelle Namensschild erst nach Bestätigung; die ausgewählten Dateien bleiben erhalten. */
+  function confirmAuthorContext() {
+    if (busy || !session.profileId) return;
+    setInitial(session);
+    setError('');
+  }
   /**
    * Überträgt ausgewählte Bilder nacheinander und verwendet je Datei eine stabile Anfrage-ID für
    * Wiederholungen. Bei einem Fehler bleiben die noch nicht bestätigten Dateien auswählbar; bereits
@@ -2668,6 +3154,10 @@ function UploadDialog({
    */
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (contextChanged) {
+      setError('Bitte bestätige zuerst das aktuelle Namensschild oder öffne den Upload erneut.');
+      return;
+    }
     if (!files.length) return;
     setError('');
     setBusy(true);
@@ -2688,11 +3178,11 @@ function UploadDialog({
           ).slice(0, 160),
         );
         data.append('category', category);
-        data.append('profileVersion', String(initial.current.profileVersion));
+        data.append('profileVersion', String(initial.profileVersion));
         // Bei einer verlorenen Antwort kann dieselbe Datei ohne unbeabsichtigte Dopplung erneut gesendet werden.
         if (!requests.current.has(file)) requests.current.set(file, crypto.randomUUID());
         data.append('requestId', requests.current.get(file)!);
-        await uploadPhoto(data, session, setPercent);
+        await uploadPhoto(data, initial, setPercent);
         successful++;
         setDone((d) => d + 1);
         setFiles((previous) => previous.filter((f) => f !== file));
@@ -2715,6 +3205,12 @@ function UploadDialog({
       }}
     >
       <form onSubmit={submit}>
+        <AuthorContextNotice
+          opened={initial}
+          current={session}
+          busy={busy}
+          confirm={confirmAuthorContext}
+        />
         <p className="form-intro">
           JPEG, PNG, WebP oder HEIC · höchstens 25 MB pro Foto · bis zu 10 Fotos
         </p>
@@ -2779,8 +3275,8 @@ function UploadDialog({
           </select>
         </label>
         <p className="tiny-note">
-          Das Namensschild bleibt während dieses Uploads bei {name(initial.current.profileId)}.
-          Nicht lesbare Dateien werden mit einer verständlichen Meldung abgelehnt.
+          Das Namensschild bleibt während dieses Uploads bei {name(initial.profileId)}. Nicht
+          lesbare Dateien werden mit einer verständlichen Meldung abgelehnt.
         </p>
         {busy && (
           <div className="upload-progress">
@@ -2800,7 +3296,7 @@ function UploadDialog({
           <button type="button" className="button secondary" onClick={close} disabled={busy}>
             Schließen
           </button>
-          <button className="button primary" disabled={busy || !files.length}>
+          <button className="button primary" disabled={busy || contextChanged || !files.length}>
             {busy ? <LoaderCircle className="spin" size={17} /> : <ImagePlus size={17} />}Fotos
             speichern
           </button>
@@ -2821,34 +3317,62 @@ function PhotoDialog({
 }: {
   photo: Photo;
   close: () => void;
-  remove: (photo: Photo) => Promise<void>;
+  remove: (photo: Photo, authorSession: Session) => Promise<void>;
 }) {
   const { session, refresh, notify } = useApp();
-  const initial = useRef({ profileVersion: session.profileVersion, version: photo.version });
+  const [initial, setInitial] = useState(session);
+  const version = useRef(photo.version);
+  const contextChanged = !hasSameAuthorContext(initial, session);
   const [title, setTitle] = useState(photo.title);
   const [category, setCategory] = useState(photo.category);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  /** Bestätigt die aktuelle Sitzung ausdrücklich, ohne den ursprünglichen Fotostand still zu ersetzen. */
+  function confirmAuthorContext() {
+    if (busy || !session.profileId) return;
+    setInitial(session);
+    setConfirmRemove(false);
+    setError('');
+  }
+  /** Verändert den Papierkorb nur im bestätigten Autorenkontext und behält Fehler im offenen Dialog. */
+  async function changeDeletedAt() {
+    if (busy || contextChanged) return;
+    setBusy(true);
+    setError('');
+    try {
+      await remove({ ...photo, version: version.current }, initial);
+    } catch (error) {
+      setError(errorText(error));
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
   /**
    * Speichert Titel und Fotokategorie mit den ursprünglichen Datensatz- und Profilversionen. Bei
    * Konflikten bleiben Eingaben erhalten; nach Erfolg wird die Galerie aktualisiert.
    */
   async function save(event: FormEvent) {
     event.preventDefault();
+    if (contextChanged) {
+      setError('Bitte bestätige zuerst das aktuelle Namensschild oder öffne das Foto erneut.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
       await api(`/photos/${photo.id}`, {
         method: 'PATCH',
-        session,
-        body: { title, category, ...initial.current },
+        session: initial,
+        body: { title, category, profileVersion: initial.profileVersion, version: version.current },
       });
       await refresh();
       notify('Foto aktualisiert.');
       close();
     } catch (error) {
       setError(errorText(error));
+      await refresh();
     } finally {
       setBusy(false);
     }
@@ -2880,6 +3404,12 @@ function PhotoDialog({
         )}
       </div>
       <form onSubmit={save}>
+        <AuthorContextNotice
+          opened={initial}
+          current={session}
+          busy={busy}
+          confirm={confirmAuthorContext}
+        />
         <div className="form-grid">
           <label>
             Beschreibung
@@ -2909,12 +3439,13 @@ function PhotoDialog({
           <button
             type="button"
             className="button danger-text"
-            onClick={() => (photo.deletedAt ? void remove(photo) : setConfirmRemove(true))}
+            disabled={busy || contextChanged}
+            onClick={() => (photo.deletedAt ? void changeDeletedAt() : setConfirmRemove(true))}
           >
             <Trash2 size={16} />
             {photo.deletedAt ? 'Wiederherstellen' : 'In den Papierkorb'}
           </button>
-          <button className="button primary" disabled={busy}>
+          <button className="button primary" disabled={busy || contextChanged}>
             Änderungen speichern
           </button>
         </div>
@@ -2929,7 +3460,11 @@ function PhotoDialog({
             <button className="button secondary" onClick={() => setConfirmRemove(false)}>
               Behalten
             </button>
-            <button className="button danger" onClick={() => void remove(photo)}>
+            <button
+              className="button danger"
+              disabled={busy || contextChanged}
+              onClick={() => void changeDeletedAt()}
+            >
               Foto entfernen
             </button>
           </div>
@@ -2940,58 +3475,27 @@ function PhotoDialog({
 }
 
 /**
- * Zeigt gemeinsamen Zugangsschutz, Speicher und den tatsächlichen Sicherungsstatus. Die Ansicht
- * startet nur ausdrücklich angeforderte Kennwortänderungen oder Sicherungen.
+ * Zeigt die gewählte Person, die Nutzung im Heimnetz und den tatsächlichen Sicherungsstatus.
+ * Profilaktionen betreffen nur dieses Gerät; die gemeinsamen Inhalte und Backups bleiben erhalten.
  */
-function SettingsView({ logout }: { logout: () => Promise<void> }) {
-  const { session, refresh, notify } = useApp();
+function SettingsView({
+  resetProfile,
+  openProfiles,
+}: {
+  resetProfile: () => Promise<void>;
+  openProfiles: () => void;
+}) {
+  const { session, notify } = useApp();
   const [system, setSystem] = useState<any>(null);
   const [systemError, setSystemError] = useState('');
-  const [password, setPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  // Der technische Status wird beim Öffnen gelesen; nach einer manuellen Sicherung lädt backup ihn erneut.
+  // Beim Öffnen den Betriebsstatus lesen; nach einer manuellen Sicherung aktualisiert backup ihn erneut.
   useEffect(() => {
     api('/system')
       .then(setSystem)
       .catch((error) => setSystemError(errorText(error)));
   }, []);
-  /**
-   * Prüft die Wiederholung, ändert das Haushaltskennwort serverseitig und leert danach die
-   * Kennwortfelder. Anschließend wird die Sitzung neu geladen, da bisherige Sitzungen widerrufen
-   * werden.
-   */
-  async function changePassword(event: FormEvent) {
-    event.preventDefault();
-    if (newPassword !== confirm) {
-      setError('Die neuen Kennwörter stimmen noch nicht überein.');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      await api('/password', {
-        method: 'POST',
-        session,
-        body: { currentPassword: password, newPassword },
-      });
-      setPassword('');
-      setNewPassword('');
-      setConfirm('');
-      notify('Das Haushaltskennwort wurde geändert. Meldet eure Geräte neu an.');
-      await refresh();
-    } catch (error) {
-      setError(errorText(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-  /**
-   * Fordert eine Sicherung an und liest danach deren aktuellen Betriebsstatus. Fehlermeldungen
-   * werden angezeigt; ein bloß gestarteter Request wird nicht als Erfolg gemeldet.
-   */
+  /** Fordert eine Sicherung an und zeigt Erfolg erst nach Bestätigung und erneuter Statusabfrage. */
   async function backup() {
     setBusy(true);
     try {
@@ -3011,127 +3515,40 @@ function SettingsView({ logout }: { logout: () => Promise<void> }) {
   return (
     <>
       <PageTitle
-        eyebrow="EIN GUTER PLATZ FÜR EURE DATEN"
+        eyebrow="EIN GUTER PLATZ FÜR EURE PLÄNE"
         title="Euer Zuhause, gut aufgehoben"
-        description="Gemeinsamer Zugang, Speicher und Datensicherung."
+        description="Profile, Heimnetz und Datensicherung."
       />
       <div className="settings-grid">
-        <section className="panel settings-card">
-          <div className="settings-card-title">
-            <LockKeyhole size={23} />
-            <h2>Gemeinsamer Zugang</h2>
-          </div>
-          <p>
-            Ein Haushaltskennwort schützt eure gemeinsamen Inhalte. Karla und Marvin sind die
-            Namensschilder eurer Einträge.
-          </p>
-          <form onSubmit={changePassword}>
-            <label>
-              Aktuelles Haushaltskennwort
-              <input
-                type="password"
-                required
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </label>
-            <label>
-              Neues Haushaltskennwort
-              <input
-                type="password"
-                required
-                minLength={12}
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Mindestens 12 Zeichen"
-              />
-            </label>
-            <label>
-              Neues Kennwort wiederholen
-              <input
-                type="password"
-                required
-                minLength={12}
-                autoComplete="new-password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-              />
-            </label>
-            <p className="tiny-note">
-              Bisherige Sitzungen werden beendet. Meldet eure Geräte danach mit dem neuen Kennwort
-              an.
-            </p>
-            {error && (
-              <div className="form-error" role="alert">
-                {error}
-              </div>
-            )}
-            <button className="button primary" disabled={busy}>
-              Kennwort ändern
-            </button>
-          </form>
-        </section>
         <div className="settings-stack">
           <section className="panel settings-card">
             <div className="settings-card-title">
-              <ShieldCheck size={23} />
-              <h2>Sicherung & Speicher</h2>
+              <Users size={23} />
+              <h2>Dein Namensschild</h2>
             </div>
-            {system ? (
-              <>
-                <div className="storage-heading">
-                  <span>Geschützte Fotos</span>
-                  <strong>
-                    {bytes(system.mediaBytes || 0)}
-                    {' / '}
-                    {bytes(system.mediaLimitBytes || 20 * 1024 ** 3)}
-                  </strong>
-                </div>
-                <div className="progress-track">
-                  <span
-                    style={{
-                      width: `${Math.min(100, ((system.mediaBytes || 0) / (system.mediaLimitBytes || 1)) * 100)}%`,
-                    }}
-                  />
-                </div>
-                {typeof system.freeBytes === 'number' && (
-                  <p className="tiny-note">{bytes(system.freeBytes)} auf dem Laufwerk frei.</p>
-                )}
-                <div className={`backup-state ${system.backupConfigured ? '' : 'attention'}`}>
-                  <CircleAlert size={20} />
-                  <div>
-                    <strong>
-                      {system.backupConfigured
-                        ? 'Sicherungsziel eingerichtet'
-                        : 'Sicherungsziel noch einrichten'}
-                    </strong>
-                    <p>
-                      {system.backupConfigured
-                        ? system.lastBackup?.lastSuccess?.createdAt
-                          ? `Letzte erfolgreiche Sicherung: ${fullDate(system.lastBackup.lastSuccess.createdAt)}${system.lastBackup.error ? '. Der letzte Versuch ist fehlgeschlagen: ' + system.lastBackup.error : ''}`
-                          : system.lastBackup?.error
-                            ? `Noch keine erfolgreiche Sicherung. ${system.lastBackup.error}`
-                            : 'Noch keine erfolgreiche Sicherung angezeigt.'
-                        : 'Für den verlässlichen Alltag braucht ihr eine geprüfte Sicherung auf einem anderen Datenträger. Eine Kopie auf derselben SSD reicht nicht.'}
-                    </p>
-                  </div>
-                </div>
-                {system.backupConfigured && (
-                  <button
-                    className="button secondary"
-                    disabled={busy}
-                    onClick={() => void backup()}
-                  >
-                    <RefreshCw size={16} />
-                    Jetzt sichern
-                  </button>
-                )}
-              </>
-            ) : (
-              <p>{systemError || 'Betriebsstatus wird geladen …'}</p>
-            )}
+            <div className="settings-profile">
+              <span className={`avatar large ${session.profileId}`}>
+                {name(session.profileId)[0]}
+              </span>
+              <div>
+                <strong>{name(session.profileId)}</strong>
+                <span>Auf diesem Gerät ausgewählt</span>
+              </div>
+            </div>
+            <p>
+              Neue Einträge werden dieser Person zugeordnet. Ihr könnt das Profil jederzeit
+              wechseln; eure Daten bleiben gemeinsam.
+            </p>
+            <div className="action-wrap">
+              <button className="button primary" onClick={openProfiles}>
+                <Users size={16} />
+                Profil wechseln
+              </button>
+              <button className="button secondary" onClick={() => void resetProfile()}>
+                <ArrowLeft size={16} />
+                Zur Profilauswahl
+              </button>
+            </div>
           </section>
           <section className="panel settings-card">
             <div className="settings-card-title">
@@ -3146,12 +3563,63 @@ function SettingsView({ logout }: { logout: () => Promise<void> }) {
               Installation am Handy: Im Browser-Menü „Zum Home-Bildschirm“ beziehungsweise „App
               installieren“ wählen. Ein vertrauenswürdiger HTTPS-Zugang ist dafür erforderlich.
             </p>
-            <button className="button secondary" onClick={() => void logout()}>
-              <LogOut size={16} />
-              Dieses Gerät abmelden
-            </button>
           </section>
         </div>
+        <section className="panel settings-card">
+          <div className="settings-card-title">
+            <ShieldCheck size={23} />
+            <h2>Sicherung & Speicher</h2>
+          </div>
+          {system ? (
+            <>
+              <div className="storage-heading">
+                <span>Geschützte Fotos</span>
+                <strong>
+                  {bytes(system.mediaBytes || 0)}
+                  {' / '}
+                  {bytes(system.mediaLimitBytes || 20 * 1024 ** 3)}
+                </strong>
+              </div>
+              <div className="progress-track">
+                <span
+                  style={{
+                    width: `${Math.min(100, ((system.mediaBytes || 0) / (system.mediaLimitBytes || 1)) * 100)}%`,
+                  }}
+                />
+              </div>
+              {typeof system.freeBytes === 'number' && (
+                <p className="tiny-note">{bytes(system.freeBytes)} auf dem Laufwerk frei.</p>
+              )}
+              <div className={`backup-state ${system.backupConfigured ? '' : 'attention'}`}>
+                <CircleAlert size={20} />
+                <div>
+                  <strong>
+                    {system.backupConfigured
+                      ? 'Sicherungsziel eingerichtet'
+                      : 'Sicherungsziel noch einrichten'}
+                  </strong>
+                  <p>
+                    {system.backupConfigured
+                      ? system.lastBackup?.lastSuccess?.createdAt
+                        ? `Letzte erfolgreiche Sicherung: ${fullDate(system.lastBackup.lastSuccess.createdAt)}${system.lastBackup.error ? '. Der letzte Versuch ist fehlgeschlagen: ' + system.lastBackup.error : ''}`
+                        : system.lastBackup?.error
+                          ? `Noch keine erfolgreiche Sicherung. ${system.lastBackup.error}`
+                          : 'Noch keine erfolgreiche Sicherung angezeigt.'
+                      : 'Für den verlässlichen Alltag braucht ihr eine geprüfte Sicherung auf einem anderen Datenträger. Eine Kopie auf derselben SSD reicht nicht.'}
+                  </p>
+                </div>
+              </div>
+              {system.backupConfigured && (
+                <button className="button secondary" disabled={busy} onClick={() => void backup()}>
+                  <RefreshCw size={16} />
+                  Jetzt sichern
+                </button>
+              )}
+            </>
+          ) : (
+            <p>{systemError || 'Betriebsstatus wird geladen …'}</p>
+          )}
+        </section>
       </div>
     </>
   );
@@ -3173,6 +3641,8 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
     defectId: '',
     priority: 'normal',
     status: collection === 'projects' ? 'idea' : 'open',
+    phase: 'preparation',
+    predecessorIds: [],
     assignees: [],
     startDate: '',
     dueDate: '',
@@ -3201,8 +3671,13 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
   const [form, setForm] = useState(defaults);
   // Diese Versionen gehören zum geöffneten Formular und folgen ausdrücklich nicht dem Hintergrund-Polling.
   const [version, setVersion] = useState(spec.record?.version);
-  const [profileVersion, setProfileVersion] = useState(spec.profileVersion);
-  const [author, setAuthor] = useState(spec.profileId);
+  const [authorContext, setAuthorContext] = useState<AuthorContext>({
+    profileVersion: spec.profileVersion,
+    profileId: spec.profileId,
+    csrfToken: spec.csrfToken,
+  });
+  const { profileVersion, profileId: author } = authorContext;
+  const contextChanged = !hasSameAuthorContext(authorContext, session);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState<{ latest?: AnyRecord; profile?: Session } | null>(null);
@@ -3210,12 +3685,36 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
   const [completeConfirm, setCompleteConfirm] = useState(false);
   // Die unveränderte Kennung lässt den Server wiederholtes Anlegen nach einem Verbindungsabbruch erkennen.
   const requestId = useRef(crypto.randomUUID());
+  /** Bestätigt den aktuellen Autor ausdrücklich; Eingaben und offene Datensatzkonflikte bleiben bestehen. */
+  function confirmAuthorContext() {
+    if (busy || !session.profileId) return;
+    setAuthorContext({
+      csrfToken: session.csrfToken,
+      profileVersion: session.profileVersion,
+      profileId: session.profileId,
+    });
+    setError('');
+  }
   /**
    * Ändert genau ein Formularfeld unveränderlich. Andere Eingaben und der gespeicherte
    * Bearbeitungskontext bleiben erhalten.
    */
   const update = (field: string, value: any) =>
     setForm((previous) => ({ ...previous, [field]: value }));
+  /** Ein Projektwechsel entfernt unpassende Vorgänger und übernimmt bei Aufgaben den zugehörigen Raum. */
+  const updateProject = (projectId: string) => {
+    setForm((previous) => ({
+      ...previous,
+      projectId,
+      ...(collection === 'tasks' && projectId !== previous.projectId
+        ? {
+            predecessorIds: [],
+            roomId:
+              state.projects.find((project) => project.id === projectId)?.roomId || previous.roomId,
+          }
+        : {}),
+    }));
+  };
   // Die Positivliste verhindert, dass UI-Hilfsfelder oder fremde Datensatzattribute zur API gelangen.
   const fields: Record<Collection, string[]> = {
     rooms: ['title', 'description', 'color', 'icon'],
@@ -3228,6 +3727,8 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
       'defectId',
       'priority',
       'status',
+      'phase',
+      'predecessorIds',
       'assignees',
       'startDate',
       'dueDate',
@@ -3266,6 +3767,20 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
   async function save(event?: FormEvent, extra: Record<string, any> = {}, confirmed = false) {
     event?.preventDefault();
     setError('');
+    if (contextChanged) {
+      setError('Bitte bestätige zuerst das aktuelle Namensschild oder öffne das Formular erneut.');
+      return;
+    }
+    if (
+      collection === 'tasks' &&
+      ['active', 'done'].includes(form.status) &&
+      waitingFor(form as Pick<Task, 'predecessorIds'>, state.tasks).length
+    ) {
+      setError(
+        'Diese Aufgabe wartet noch auf Vorgänger. Erledigt sie zuerst oder ändert die Verknüpfung bewusst.',
+      );
+      return;
+    }
     if (form.startDate && form.dueDate && form.startDate > form.dueDate) {
       setError('Der Beginn muss vor oder am Fälligkeitstag liegen.');
       return;
@@ -3314,7 +3829,7 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
     try {
       await api(`/${collection}${isNew ? '' : `/${spec.record!.id}`}`, {
         method: isNew ? 'POST' : 'PATCH',
-        session,
+        session: { ...session, ...authorContext },
         body,
       });
       await refresh();
@@ -3324,6 +3839,7 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
       close();
     } catch (error) {
       setError(errorText(error));
+      if (error instanceof ApiError && error.status === 403) await refresh();
       if (error instanceof ApiError && error.status === 409) {
         // Nur den Vergleichsstand laden: form, version und author werden hier bewusst nicht überschrieben.
         try {
@@ -3368,7 +3884,7 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
       <select
         value={form.projectId || ''}
         required={collection === 'notes' || collection === 'comparisons'}
-        onChange={(e) => update('projectId', e.target.value)}
+        onChange={(e) => updateProject(e.target.value)}
       >
         <option value="">
           {collection === 'notes' || collection === 'comparisons'
@@ -3404,11 +3920,20 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
       : collection === 'defects'
         ? defectStatus
         : taskStatus;
+  const predecessorChoices =
+    collection === 'tasks' && form.projectId
+      ? state.tasks.filter(
+          (task) =>
+            task.projectId === form.projectId &&
+            task.id !== spec.record?.id &&
+            (!task.archivedAt || form.predecessorIds.includes(task.id)),
+        )
+      : [];
+  const pendingPredecessors =
+    collection === 'tasks' ? waitingFor(form as Pick<Task, 'predecessorIds'>, state.tasks) : [];
   const photoOptions = state.photos.filter(
     (p) => p.projectId === form.projectId && !p.deletedAt && !p.archivedAt,
   );
-  const attributionChanged =
-    conflict?.profile && conflict.profile.profileVersion !== profileVersion;
   return (
     <Modal
       title={`${collectionLabels[collection]} ${isNew ? (collection === 'notes' ? 'schreiben' : 'anlegen') : 'bearbeiten'}`}
@@ -3422,6 +3947,12 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
           <Person id={author} prefix={isNew ? 'Neu von ' : 'Bearbeitung von '} />
           <span>Gemeinsam sichtbar</span>
         </div>
+        <AuthorContextNotice
+          opened={authorContext}
+          current={session}
+          busy={busy}
+          confirm={confirmAuthorContext}
+        />
         {collection !== 'notes' && (
           <label>
             {collection === 'rooms'
@@ -3498,7 +4029,15 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
                 Status
                 <select value={form.status} onChange={(e) => update('status', e.target.value)}>
                   {Object.entries(statusOptions).map(([key, label]) => (
-                    <option key={key} value={key}>
+                    <option
+                      key={key}
+                      value={key}
+                      disabled={
+                        collection === 'tasks' &&
+                        ['active', 'done'].includes(key) &&
+                        pendingPredecessors.length > 0
+                      }
+                    >
                       {label}
                     </option>
                   ))}
@@ -3517,6 +4056,71 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
                 </label>
               )}
             </div>
+            {collection === 'tasks' && (
+              <div className="task-planning-fields">
+                <label>
+                  Projektphase
+                  <select
+                    value={form.phase}
+                    onChange={(event) => update('phase', event.target.value)}
+                  >
+                    {TASK_PHASES.map((phase) => (
+                      <option key={phase} value={phase}>
+                        {taskPhaseLabels[phase]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <fieldset className="predecessor-field">
+                  <legend>Was muss vorher fertig sein?</legend>
+                  <p className="tiny-note">
+                    Alle ausgewählten Vorgänger müssen erledigt sein. Verknüpfungen gelten im selben
+                    Projekt; bei einem Projektwechsel werden sie entfernt.
+                  </p>
+                  {!form.projectId ? (
+                    <p className="subtle">Wähle zuerst ein Projekt, um Aufgaben zu verknüpfen.</p>
+                  ) : predecessorChoices.length ? (
+                    <div className="predecessor-options">
+                      {predecessorChoices.map((task) => (
+                        <label key={task.id} className="predecessor-option">
+                          <input
+                            type="checkbox"
+                            checked={form.predecessorIds.includes(task.id)}
+                            onChange={(event) =>
+                              update(
+                                'predecessorIds',
+                                event.target.checked
+                                  ? [...form.predecessorIds, task.id]
+                                  : form.predecessorIds.filter((id: string) => id !== task.id),
+                              )
+                            }
+                          />
+                          <span>
+                            <strong>{task.title}</strong>
+                            <small>
+                              {taskPhaseLabels[task.phase]} · {taskStatus[task.status]}
+                              {task.archivedAt ? ' · Archiviert' : ''}
+                            </small>
+                          </span>
+                          {task.status === 'done' && <Check size={15} />}
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="subtle">Noch keine anderen Aufgaben in diesem Projekt.</p>
+                  )}
+                  {pendingPredecessors.length > 0 && (
+                    <p className="dependency-notice">
+                      <CircleAlert size={15} />
+                      Wartet auf:{' '}
+                      {pendingPredecessors
+                        .map((entry) => entry.task?.title || 'Nicht mehr verfügbare Aufgabe')
+                        .join(', ')}
+                    </p>
+                  )}
+                </fieldset>
+              </div>
+            )}
             {collection !== 'projects' && (
               <fieldset className="assignee-field">
                 <legend>Wer übernimmt es?</legend>
@@ -3758,23 +4362,13 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
                   ))}
               </div>
             )}
-            {attributionChanged && (
-              <p>
-                {'Das aktive Profil ist inzwischen '}
-                <strong>{name(conflict.profile!.profileId)}</strong>. Ein erneutes Speichern erhält
-                dieses Namensschild.
-              </p>
-            )}
             <button
               type="button"
               className="button secondary"
+              disabled={busy || contextChanged}
               onClick={() => {
-                // Erst diese bewusste Bestätigung erlaubt Speichern gegen den neuen Stand bzw. unter dem neuen Profil.
+                // Nur der Datensatzstand wird hier bestätigt; ein anderer Autor benötigt die eigene Bestätigung oben.
                 if (conflict.latest) setVersion(conflict.latest.version);
-                if (conflict.profile) {
-                  setProfileVersion(conflict.profile.profileVersion);
-                  setAuthor(conflict.profile.profileId);
-                }
                 setConflict(null);
                 setError('');
               }}
@@ -3812,7 +4406,7 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
             <button
               type="button"
               className="button text-button"
-              disabled={busy}
+              disabled={busy || contextChanged}
               onClick={() =>
                 spec.record!.archivedAt
                   ? void save(undefined, { archivedAt: null }, true)
@@ -3827,7 +4421,7 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
               Abbrechen
             </button>
           )}
-          <button className="button primary" disabled={busy || !!conflict}>
+          <button className="button primary" disabled={busy || contextChanged || !!conflict}>
             {busy ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}Speichern
           </button>
         </div>
@@ -3848,7 +4442,7 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
               <button
                 type="button"
                 className="button primary"
-                disabled={busy || !!conflict}
+                disabled={busy || contextChanged || !!conflict}
                 onClick={() => void save(undefined, { archivedAt: new Date().toISOString() }, true)}
               >
                 Archivieren
@@ -3870,7 +4464,7 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
               <button
                 type="button"
                 className="button primary"
-                disabled={busy}
+                disabled={busy || contextChanged}
                 onClick={() => void save(undefined, {}, true)}
               >
                 Trotzdem abschließen

@@ -5,10 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { request } from "node:http";
-import { createApp } from "../server/app.js";
+import { DatabaseSync } from "node:sqlite";
+import { createApp, type AppOptions } from "../server/app.js";
+import { Store } from "../server/db.js";
 import type { Session, Photo } from "../shared/types.js";
 
-const PASSWORD = "Ein sehr gutes Testkennwort!";
 class Client {
   cookie = "";
   csrf = "";
@@ -42,7 +43,7 @@ class Client {
     const cookie = response.headers.get("set-cookie");
     if (cookie) this.cookie = cookie.split(";")[0];
     const result = (await response.json()) as any;
-    if (typeof result.authenticated === "boolean") {
+    if (typeof result.csrfToken === "string") {
       const session = result as Session;
       this.csrf = session.csrfToken ?? "";
       this.profileVersion = session.profileVersion;
@@ -82,9 +83,13 @@ class Client {
   }
 }
 /** Startet eine isolierte Testinstallation und registriert das anschließende Schließen und Entfernen ihrer temporären Daten. */
-async function fixture(t: TestContext, setup = true) {
+async function fixture(
+  t: TestContext,
+  chooseProfile = true,
+  options: Partial<AppOptions> = {},
+) {
   const dir = await mkdtemp(join(tmpdir(), "unser-zuhause-api-"));
-  const ctx = createApp({ dataDir: dir, secureCookies: false });
+  const ctx = createApp({ dataDir: dir, secureCookies: false, ...options });
   const server = ctx.app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const address = server.address();
@@ -96,11 +101,8 @@ async function fixture(t: TestContext, setup = true) {
     ctx.db.close();
     await rm(dir, { recursive: true, force: true });
   });
-  if (setup) {
-    assert.equal(
-      (await client.send("POST", "/api/setup", { password: PASSWORD })).status,
-      201,
-    );
+  if (chooseProfile) {
+    assert.equal((await client.send("GET", "/api/session")).status, 200);
     assert.equal((await client.choose("karla")).status, 200);
   }
   return {
@@ -112,25 +114,23 @@ async function fixture(t: TestContext, setup = true) {
   };
 }
 
-test("shared access has no default password; local setup, CSRF, origin and session protection work", async (t) => {
-  const { client, newClient } = await fixture(t, false);
-  const empty = await client.send("GET", "/api/session");
-  assert.equal(empty.body.configured, false);
-  assert.equal(empty.body.authenticated, false);
-  const privateState = await client.send("GET", "/api/state");
-  assert.equal(privateState.status, 401);
-  assert.equal(privateState.headers.get("cache-control"), "no-store");
-  const rebind = await new Promise<{ status: number; body: any }>(
+/** Sendet eine Anfrage mit ausdrücklich gesetztem Host-Header, um freigegebene LAN-Adressen und DNS-Rebinding isoliert zu prüfen. */
+async function hostRequest(base: string, headers: Record<string, string>) {
+  return new Promise<{ status: number; body: any; cookie?: string }>(
     (done, fail) => {
       const outgoing = request(
-        client.base + "/api/session",
-        { headers: { Host: "rebinding.example" } },
+        base + "/api/session",
+        { headers },
         (response) => {
           let text = "";
           response.setEncoding("utf8");
           response.on("data", (chunk) => (text += chunk));
           response.on("end", () =>
-            done({ status: response.statusCode!, body: JSON.parse(text) }),
+            done({
+              status: response.statusCode!,
+              body: JSON.parse(text),
+              cookie: response.headers["set-cookie"]?.[0],
+            }),
           );
         },
       );
@@ -138,42 +138,54 @@ test("shared access has no default password; local setup, CSRF, origin and sessi
       outgoing.end();
     },
   );
+}
+
+test("password-free entry creates a protected device session and preserves origin and CSRF checks", async (t) => {
+  const { ctx, client } = await fixture(t, false);
+  const privateState = await client.send("GET", "/api/state");
+  assert.equal(privateState.status, 401);
+  assert.equal(privateState.headers.get("cache-control"), "no-store");
+  const rebind = await hostRequest(client.base, { Host: "rebinding.example" });
   assert.equal(rebind.status, 403);
   assert.equal(rebind.body.code, "HOST_NOT_ALLOWED");
   assert.equal(
-    (await client.send("POST", "/api/setup", { password: "short" })).status,
-    400,
-  );
-  assert.equal(
     (
-      await client.send(
-        "POST",
-        "/api/setup",
-        { password: PASSWORD },
-        { origin: "https://evil.example" },
-      )
+      await client.send("GET", "/api/session", undefined, {
+        origin: "https://evil.example",
+      })
     ).status,
     403,
   );
   assert.equal(
     (
-      await client.send(
-        "POST",
-        "/api/setup",
-        { password: PASSWORD },
-        { headers: { "X-Forwarded-For": "192.168.1.20" } },
-      )
+      await client.send("GET", "/api/session", undefined, {
+        headers: { "Sec-Fetch-Site": "cross-site" },
+      })
     ).status,
     403,
   );
-  const setup = await client.send("POST", "/api/setup", { password: PASSWORD });
-  assert.equal(setup.status, 201);
-  assert.match(setup.headers.get("set-cookie") ?? "", /HttpOnly/);
-  assert.match(setup.headers.get("set-cookie") ?? "", /SameSite=Strict/);
   assert.equal(
-    (await client.send("POST", "/api/setup", { password: PASSWORD })).status,
-    409,
+    (
+      ctx.db.raw.prepare("SELECT count(*) n FROM sessions").get() as {
+        n: number;
+      }
+    ).n,
+    0,
   );
+  const initial = await client.send("GET", "/api/session");
+  assert.equal(initial.status, 200);
+  assert.deepEqual(Object.keys(initial.body).sort(), [
+    "csrfToken",
+    "profileId",
+    "profileVersion",
+    "profiles",
+  ]);
+  assert.equal(initial.body.profileId, null);
+  assert.equal(initial.body.profileVersion, 0);
+  assert.match(initial.body.csrfToken, /^[a-f0-9]{64}$/);
+  assert.match(initial.headers.get("set-cookie") ?? "", /HttpOnly/);
+  assert.match(initial.headers.get("set-cookie") ?? "", /SameSite=Strict/);
+  assert.equal((await client.send("GET", "/api/state")).status, 200);
   assert.equal(
     (await client.create("rooms", { title: "Küche" })).body.code,
     "PROFILE_REQUIRED",
@@ -201,43 +213,52 @@ test("shared access has no default password; local setup, CSRF, origin and sessi
     ).status,
     403,
   );
+  const repeated = await client.send("GET", "/api/session");
+  assert.equal(repeated.body.csrfToken, initial.body.csrfToken);
+  assert.equal(repeated.body.profileId, "karla");
+  assert.equal(repeated.headers.get("set-cookie"), null);
   assert.equal(
-    (await newClient().send("POST", "/api/login", { password: "wrong" }))
-      .status,
-    401,
+    (
+      ctx.db.raw.prepare("SELECT count(*) n FROM sessions").get() as {
+        n: number;
+      }
+    ).n,
+    1,
   );
-  const loginClient = newClient();
-  assert.equal(
-    (await loginClient.send("POST", "/api/login", { password: PASSWORD }))
-      .status,
-    200,
-  );
-  assert.equal((await loginClient.send("POST", "/api/logout")).status, 200);
-  assert.equal((await loginClient.send("GET", "/api/state")).status, 401);
+  for (const endpoint of ["setup", "login", "password", "logout"])
+    assert.equal(
+      (await client.send("POST", `/api/${endpoint}`, {})).status,
+      404,
+    );
 });
 
-test("concurrent local setup has exactly one winner", async (t) => {
-  const { client, newClient } = await fixture(t, false);
-  const other = newClient();
-  const outcomes = await Promise.all([
-    client.send("POST", "/api/setup", { password: PASSWORD }),
-    other.send("POST", "/api/setup", {
-      password: "Anderes gültiges Startkennwort!",
-    }),
-  ]);
-  assert.deepEqual(outcomes.map((result) => result.status).sort(), [201, 409]);
+test("configured LAN entry supports secure cookies while foreign origins remain blocked", async (t) => {
+  const { client } = await fixture(t, false, {
+    origin: "https://zuhause.home.arpa",
+    secureCookies: true,
+  });
+  const response = await hostRequest(client.base, {
+    Host: "zuhause.home.arpa",
+    Origin: "https://zuhause.home.arpa",
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.profileId, null);
+  assert.match(response.cookie ?? "", /Secure/);
   assert.equal(
-    outcomes.find((result) => result.status === 409)?.body.code,
-    "ALREADY_CONFIGURED",
+    (
+      await hostRequest(client.base, {
+        Host: "zuhause.home.arpa",
+        Origin: "https://evil.example",
+      })
+    ).status,
+    403,
   );
-  const winner = outcomes[0].status === 201 ? client : other;
-  assert.equal((await winner.send("GET", "/api/state")).status, 200);
 });
 
 test("two devices retain attribution; profile and record conflicts never silently overwrite", async (t) => {
   const { client: karla, newClient } = await fixture(t);
   const marvin = newClient();
-  await marvin.send("POST", "/api/login", { password: PASSWORD });
+  await marvin.send("GET", "/api/session");
   await marvin.choose("marvin");
   const room = (await karla.create("rooms", { title: "Wohnzimmer" })).body;
   const project = (
@@ -452,31 +473,50 @@ test("comparisons accept only available different photos from the same project",
   assert.equal(valid.body.afterZoom, 1);
 });
 
-test("password changes revoke other devices and sessions remain server controlled", async (t) => {
-  const { client, newClient } = await fixture(t);
+test("reset replaces only this device session; expired and previous cookies cannot write", async (t) => {
+  const { ctx, client, newClient } = await fixture(t);
   const other = newClient();
-  await other.send("POST", "/api/login", { password: PASSWORD });
+  await other.send("GET", "/api/session");
+  await other.choose("marvin");
   const oldCookie = client.cookie;
-  const changed = await client.send("POST", "/api/password", {
-    currentPassword: PASSWORD,
-    newPassword: "Ein anderes langes Kennwort!",
-  });
+  const oldCsrf = client.csrf;
+  assert.equal(
+    (await client.send("DELETE", "/api/session", undefined, { csrf: false }))
+      .status,
+    403,
+  );
+  const changed = await client.send("DELETE", "/api/session");
   assert.equal(changed.status, 200);
   assert.notEqual(client.cookie, oldCookie);
+  assert.notEqual(client.csrf, oldCsrf);
   assert.equal(changed.body.profileId, null);
-  assert.equal((await other.send("GET", "/api/state")).status, 401);
+  assert.equal(changed.body.profileVersion, 0);
+  const stale = newClient();
+  stale.cookie = oldCookie;
+  stale.csrf = oldCsrf;
+  assert.equal((await stale.send("GET", "/api/state")).status, 401);
   assert.equal(
-    (await other.send("POST", "/api/login", { password: PASSWORD })).status,
+    (await stale.create("rooms", { title: "Veraltete Sitzung" })).status,
     401,
   );
   assert.equal(
-    (
-      await other.send("POST", "/api/login", {
-        password: "Ein anderes langes Kennwort!",
-      })
-    ).status,
-    200,
+    (await other.send("GET", "/api/session")).body.profileId,
+    "marvin",
   );
+  assert.equal(
+    (await client.create("rooms", { title: "Noch ohne Profil" })).body.code,
+    "PROFILE_REQUIRED",
+  );
+  ctx.db.raw
+    .prepare("UPDATE sessions SET expires_at=0 WHERE csrf_token=?")
+    .run(client.csrf);
+  assert.equal((await client.send("GET", "/api/state")).status, 401);
+  const expiredCookie = client.cookie;
+  const renewed = await client.send("GET", "/api/session");
+  assert.equal(renewed.status, 200);
+  assert.equal(renewed.body.profileId, null);
+  assert.notEqual(client.cookie, expiredCookie);
+  assert.equal((await other.send("GET", "/api/state")).status, 200);
 });
 
 test("database and migration survive reopening without seed data or resets", async (t) => {
@@ -486,16 +526,430 @@ test("database and migration survive reopening without seed data or resets", asy
   try {
     assert.equal(second.db.get("rooms", room.id)?.id, room.id);
     assert.equal(second.db.list("rooms").length, 1);
-    assert.ok(second.db.getSetting("passwordHash"));
+    assert.equal(second.db.getSetting("passwordHash"), undefined);
     assert.equal(
       (
         ctx.db.raw.prepare("SELECT count(*) n FROM migrations").get() as {
           n: number;
         }
       ).n,
-      1,
+      3,
+    );
+    assert.equal(
+      (await client.send("GET", "/api/session")).body.profileId,
+      "karla",
     );
   } finally {
     second.db.close();
   }
+});
+
+test("legacy migrations remove only app credentials and add task defaults without losing household data", async (t) => {
+  for (const schemaVersion of [1, 2]) {
+    const dir = await mkdtemp(join(tmpdir(), "uz-legacy-migration-"));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+    const raw = new DatabaseSync(join(dir, "home.sqlite"));
+    raw.exec(`
+      CREATE TABLE migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+      CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE records(kind TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL CHECK(json_valid(json)), version INTEGER NOT NULL, PRIMARY KEY(kind,id));
+      CREATE TABLE sessions(token_hash TEXT PRIMARY KEY, csrf_token TEXT NOT NULL, profile_id TEXT, profile_version INTEGER NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
+      CREATE TABLE idempotency(key TEXT PRIMARY KEY, response TEXT NOT NULL, created_at INTEGER NOT NULL);
+    `);
+    for (let version = 1; version <= schemaVersion; version++)
+      raw
+        .prepare("INSERT INTO migrations VALUES(?,?)")
+        .run(version, "2026-11-16T10:00:00.000Z");
+    if (schemaVersion === 1)
+      raw
+        .prepare("INSERT INTO settings VALUES(?,?)")
+        .run("passwordHash", JSON.stringify("synthetic-old-password-hash"));
+    raw
+      .prepare("INSERT INTO settings VALUES(?,?)")
+      .run(
+        "backupSettings",
+        JSON.stringify({ directory: "synthetic-backup-directory" }),
+      );
+    raw
+      .prepare("INSERT INTO sessions VALUES(?,?,?,?,?,?)")
+      .run(
+        "synthetic-token",
+        "synthetic-csrf",
+        "karla",
+        4,
+        Date.now() + 100_000,
+        Date.now(),
+      );
+    const task = {
+      id: randomUUID(),
+      title: "Vorhandene Aufgabe",
+      description: "Bleibt vollständig erhalten",
+      projectId: null,
+      roomId: null,
+      defectId: null,
+      priority: "high",
+      status: "done",
+      assignees: ["marvin"],
+      startDate: null,
+      dueDate: "2026-12-15",
+      completedBy: "marvin",
+      createdAt: "2026-11-15T09:00:00.000Z",
+      updatedAt: "2026-11-16T09:00:00.000Z",
+      createdBy: "karla",
+      updatedBy: "marvin",
+      version: 7,
+      archivedAt: null,
+    };
+    const photo = {
+      id: randomUUID(),
+      title: "Vorhandenes Foto",
+      version: 2,
+      relativeFile: "media/synthetic-original.jpg",
+    };
+    for (const [kind, record] of [
+      ["tasks", task],
+      ["photos", photo],
+    ] as const)
+      raw
+        .prepare("INSERT INTO records VALUES(?,?,?,?)")
+        .run(kind, record.id, JSON.stringify(record), record.version);
+    raw.close();
+    const migrated = new Store(dir);
+    try {
+      assert.deepEqual(migrated.get("tasks", task.id), {
+        ...task,
+        predecessorIds: [],
+        phase: "preparation",
+      });
+      assert.deepEqual(migrated.get("photos", photo.id), photo);
+      assert.equal(migrated.getSetting("passwordHash"), undefined);
+      assert.deepEqual(migrated.getSetting("backupSettings"), {
+        directory: "synthetic-backup-directory",
+      });
+      assert.deepEqual(
+        migrated.raw
+          .prepare("SELECT version FROM migrations ORDER BY version")
+          .all()
+          .map((row) => row.version),
+        [1, 2, 3],
+      );
+      assert.equal(
+        (
+          migrated.raw.prepare("SELECT count(*) n FROM sessions").get() as {
+            n: number;
+          }
+        ).n,
+        schemaVersion === 1 ? 0 : 1,
+      );
+    } finally {
+      migrated.close();
+    }
+  }
+});
+
+test("multiple predecessors permit planning but require every predecessor before starting or completing", async (t) => {
+  const { client } = await fixture(t);
+  const project = (await client.create("projects", { title: "Bad renovieren" }))
+    .body;
+  let first = (
+    await client.create("tasks", {
+      title: "Material besorgen",
+      projectId: project.id,
+      phase: "planning",
+    })
+  ).body;
+  let second = (
+    await client.create("tasks", {
+      title: "Fläche vorbereiten",
+      projectId: project.id,
+    })
+  ).body;
+  let successor = (
+    await client.create("tasks", {
+      title: "Fliesen legen",
+      projectId: project.id,
+      predecessorIds: [first.id, second.id],
+      phase: "execution",
+      assignees: ["marvin"],
+      dueDate: "2026-12-20",
+    })
+  ).body;
+  assert.equal(first.phase, "planning");
+  assert.equal(second.phase, "preparation");
+  assert.deepEqual(second.predecessorIds, []);
+  assert.equal(successor.status, "open");
+  assert.deepEqual(successor.assignees, ["marvin"]);
+  const early = await client.patch("tasks", successor, { status: "active" });
+  assert.equal(early.status, 409);
+  assert.equal(early.body.code, "TASK_NOT_READY");
+  assert.match(early.body.message, /Material besorgen/);
+  assert.match(early.body.message, /Fläche vorbereiten/);
+  first = (await client.patch("tasks", first, { status: "done" })).body;
+  const stillWaiting = await client.patch("tasks", successor, {
+    status: "done",
+  });
+  assert.equal(stillWaiting.body.code, "TASK_NOT_READY");
+  assert.match(stillWaiting.body.message, /Fläche vorbereiten/);
+  assert.doesNotMatch(stillWaiting.body.message, /Material besorgen/);
+  successor = (await client.patch("tasks", successor, { status: "blocked" }))
+    .body;
+  second = (await client.patch("tasks", second, { status: "done" })).body;
+  assert.equal(
+    (await client.send("GET", "/api/state")).body.tasks.find(
+      (task: any) => task.id === successor.id,
+    ).status,
+    "blocked",
+  );
+  const started = await client.patch("tasks", successor, { status: "active" });
+  assert.equal(started.status, 200);
+  assert.equal(started.body.phase, "execution");
+  assert.deepEqual(started.body.predecessorIds, [first.id, second.id]);
+  const completed = await client.patch("tasks", started.body, {
+    status: "done",
+    phase: "finishing",
+  });
+  assert.equal(completed.status, 200);
+  assert.equal(completed.body.completedBy, "karla");
+  assert.equal(
+    (
+      await client.create("tasks", {
+        title: "Ungültige Phase",
+        phase: "unknown",
+      })
+    ).status,
+    400,
+  );
+});
+
+test("dependencies reject missing, duplicate, self, cyclic and cross-project references", async (t) => {
+  const { client } = await fixture(t);
+  const project = (await client.create("projects", { title: "Küche" })).body;
+  const other = (await client.create("projects", { title: "Flur" })).body;
+  const a = (
+    await client.create("tasks", { title: "A", projectId: project.id })
+  ).body;
+  const b = (
+    await client.create("tasks", {
+      title: "B",
+      projectId: project.id,
+      predecessorIds: [a.id],
+    })
+  ).body;
+  const c = (
+    await client.create("tasks", {
+      title: "C",
+      projectId: project.id,
+      predecessorIds: [b.id],
+    })
+  ).body;
+  assert.equal(
+    (await client.patch("tasks", a, { predecessorIds: [a.id] })).body.code,
+    "INVALID_DEPENDENCY",
+  );
+  assert.equal(
+    (await client.patch("tasks", a, { predecessorIds: [c.id] })).body.code,
+    "DEPENDENCY_CYCLE",
+  );
+  assert.equal(
+    (await client.patch("tasks", b, { predecessorIds: [a.id, a.id] })).status,
+    400,
+  );
+  assert.equal(
+    (
+      await client.create("tasks", {
+        title: "Fehlt",
+        projectId: project.id,
+        predecessorIds: [randomUUID()],
+      })
+    ).body.code,
+    "INVALID_DEPENDENCY",
+  );
+  assert.equal(
+    (
+      await client.create("tasks", {
+        title: "Anderes Projekt",
+        projectId: other.id,
+        predecessorIds: [a.id],
+      })
+    ).body.code,
+    "INVALID_DEPENDENCY",
+  );
+  assert.equal(
+    (
+      await client.create("tasks", {
+        title: "Ohne Projekt",
+        predecessorIds: [a.id],
+      })
+    ).body.code,
+    "INVALID_DEPENDENCY",
+  );
+  assert.equal(
+    (
+      await client.create("tasks", {
+        title: "Zu früh erledigt",
+        projectId: project.id,
+        predecessorIds: [a.id],
+        status: "done",
+      })
+    ).body.code,
+    "TASK_NOT_READY",
+  );
+  assert.equal((await client.send("GET", "/api/state")).body.tasks.length, 3);
+});
+
+test("dependency changes explicitly reopen started tasks and predecessor edits protect live successors", async (t) => {
+  const { client } = await fixture(t);
+  const project = (await client.create("projects", { title: "Wohnzimmer" }))
+    .body;
+  const other = (await client.create("projects", { title: "Gästezimmer" }))
+    .body;
+  let a = (
+    await client.create("tasks", {
+      title: "Abkleben",
+      projectId: project.id,
+      status: "done",
+    })
+  ).body;
+  const b = (
+    await client.create("tasks", {
+      title: "Farbe mischen",
+      projectId: project.id,
+      status: "done",
+    })
+  ).body;
+  let successor = (
+    await client.create("tasks", {
+      title: "Streichen",
+      projectId: project.id,
+      predecessorIds: [a.id, b.id],
+      status: "active",
+    })
+  ).body;
+  const reordered = await client.patch("tasks", successor, {
+    predecessorIds: [b.id, a.id],
+  });
+  assert.equal(reordered.status, 200);
+  successor = reordered.body;
+  for (const fields of [
+    { predecessorIds: [a.id] },
+    { predecessorIds: [a.id], status: "blocked" },
+  ])
+    assert.equal(
+      (await client.patch("tasks", successor, fields)).body.code,
+      "TASK_DEPENDENCY_CONFLICT",
+    );
+  for (const fields of [
+    { status: "open" },
+    { archivedAt: new Date().toISOString() },
+    { projectId: other.id },
+  ]) {
+    const rejected = await client.patch("tasks", a, fields);
+    assert.equal(rejected.body.code, "TASK_DEPENDENCY_CONFLICT");
+    assert.match(rejected.body.message, /Streichen/);
+  }
+  successor = (
+    await client.patch("tasks", successor, {
+      predecessorIds: [a.id],
+      status: "open",
+    })
+  ).body;
+  const reopened = await client.patch("tasks", a, { status: "open" });
+  assert.equal(reopened.status, 200);
+  assert.equal(reopened.body.completedBy, null);
+  a = reopened.body;
+  assert.equal(
+    (await client.patch("tasks", successor, { status: "active" })).body.code,
+    "TASK_NOT_READY",
+  );
+  assert.equal(
+    (await client.patch("tasks", a, { archivedAt: new Date().toISOString() }))
+      .body.code,
+    "TASK_DEPENDENCY_CONFLICT",
+  );
+  assert.equal(
+    (await client.patch("tasks", a, { projectId: other.id })).body.code,
+    "TASK_DEPENDENCY_CONFLICT",
+  );
+  successor = (
+    await client.patch("tasks", successor, {
+      archivedAt: new Date().toISOString(),
+    })
+  ).body;
+  const archived = await client.patch("tasks", a, {
+    archivedAt: new Date().toISOString(),
+  });
+  assert.equal(archived.status, 200);
+  a = archived.body;
+  assert.equal(
+    (await client.patch("tasks", successor, { archivedAt: null })).body.code,
+    "TASK_DEPENDENCY_CONFLICT",
+  );
+  assert.equal(
+    (
+      await client.create("tasks", {
+        title: "Archiv ist nicht erledigt",
+        projectId: project.id,
+        predecessorIds: [a.id],
+      })
+    ).body.code,
+    "TASK_DEPENDENCY_CONFLICT",
+  );
+  a = (await client.patch("tasks", a, { archivedAt: null })).body;
+  assert.equal(
+    (await client.patch("tasks", successor, { archivedAt: null })).status,
+    200,
+  );
+});
+
+test("two devices validate fresh dependency state and preserve optimistic record conflicts", async (t) => {
+  const { client: karla, newClient } = await fixture(t);
+  const marvin = newClient();
+  await marvin.send("GET", "/api/session");
+  await marvin.choose("marvin");
+  const project = (await karla.create("projects", { title: "Boden" })).body;
+  let predecessor = (
+    await karla.create("tasks", {
+      title: "Untergrund",
+      projectId: project.id,
+      status: "done",
+    })
+  ).body;
+  let successor = (
+    await karla.create("tasks", {
+      title: "Parkett legen",
+      projectId: project.id,
+      predecessorIds: [predecessor.id],
+    })
+  ).body;
+  predecessor = (await marvin.patch("tasks", predecessor, { status: "open" }))
+    .body;
+  assert.equal(
+    (await karla.patch("tasks", successor, { status: "active" })).body.code,
+    "TASK_NOT_READY",
+  );
+  predecessor = (await marvin.patch("tasks", predecessor, { status: "done" }))
+    .body;
+  const staleSuccessor = successor;
+  successor = (await karla.patch("tasks", successor, { status: "done" })).body;
+  assert.equal(successor.completedBy, "karla");
+  const stale = await marvin.patch("tasks", staleSuccessor, {
+    predecessorIds: [],
+    status: "open",
+  });
+  assert.equal(stale.body.code, "VERSION_CONFLICT");
+  assert.equal(stale.body.record.status, "done");
+  const reopen = await marvin.patch("tasks", predecessor, { status: "open" });
+  assert.equal(reopen.body.code, "TASK_DEPENDENCY_CONFLICT");
+  assert.match(reopen.body.message, /Parkett legen/);
+  assert.equal(
+    (await marvin.patch("tasks", successor, { predecessorIds: [] })).body.code,
+    "TASK_DEPENDENCY_CONFLICT",
+  );
+  const explicitlyReopened = await marvin.patch("tasks", successor, {
+    predecessorIds: [],
+    status: "open",
+  });
+  assert.equal(explicitlyReopened.status, 200);
+  assert.equal(explicitlyReopened.body.completedBy, null);
+  assert.equal(explicitlyReopened.body.updatedBy, "marvin");
 });

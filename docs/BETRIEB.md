@@ -4,6 +4,8 @@ Für die vollständige Einrichtung von Anfang an einschließlich Programmdownloa
 
 Die Anwendung besteht aus einem Node-Prozess für Daten und Oberfläche sowie optional Caddy für HTTPS. Node hört nur auf `127.0.0.1:3210`. Caddy bindet ausschließlich die ausdrücklich eingerichtete private IPv4-Adresse. Es gibt keine Cloud-Veröffentlichung oder Router-Portweiterleitung.
 
+Die App öffnet direkt die Auswahl Karla/Marvin und merkt sich das gewählte Profil pro Gerätesitzung. Wer das erlaubte Heimnetz und die App-Adresse erreicht, kann die gemeinsamen Inhalte lesen und ändern. Die Profilnamen kennzeichnen Einträge; sie schützen den Zugang nicht. Sicherungskennwort und Windows-Kennwort für die Aufgabenplanung bleiben davon unabhängig erforderlich.
+
 ## Ordner und Konfiguration
 
 | Ort | Inhalt |
@@ -20,14 +22,20 @@ Der Datenordner kann beim ersten Start mit `Start.ps1 -DataDir 'D:\UnserZuhause'
 
 `Run.ps1` setzt Dateirechte des gewählten Datenordners für den ausführenden Windows-Benutzer und SYSTEM. Nicht einen bereits anderweitig verwendeten Ordner als Datenordner angeben.
 
-## Lokale Ersteinrichtung
+## Lokal starten
 
 1. `scripts\Install.ps1` ausführen, wenn Laufzeit oder Abhängigkeiten fehlen. Die portable Node-Datei wird von nodejs.org geladen und anhand der veröffentlichten SHA-256-Prüfsumme kontrolliert. Pakete werden anhand der Sperrdatei installiert.
 2. `scripts\Start.ps1 -OpenBrowser` ausführen.
-3. Unter `http://localhost:3210` ein eigenes Haushaltskennwort festlegen. Danach Profil wählen.
+3. Unter `http://localhost:3210` direkt Karla oder Marvin wählen. Ein bereits gemerktes Profil bleibt normalerweise ausgewählt.
 4. Einen Raum, ein Projekt und eine Aufgabe anlegen und nach Neuladen prüfen.
 
-Die Kennworteinrichtung ist für den direkten lokalen Zugang vorgesehen. Nach Aktivierung der HTTPS-Konfiguration deaktiviert der Starter diesen Einrichtungsweg. Deshalb den Haushalt vor der WLAN-Freigabe einrichten.
+Beim Öffnen legt `GET /api/session` automatisch eine Gerätesitzung an oder verwendet die vorhandene weiter. Eine vorherige Kennworteinrichtung ist auch vor der HTTPS-Freigabe nicht nötig. „Profil wechseln“ und „Zur Profilauswahl“ ändern die Auswahl auf diesem Gerät, ohne die Auswahl auf anderen Geräten zu ändern.
+
+## Projektplan und Aufgabenketten
+
+Der Projektplan bietet Liste, Board und Zeitachse. Aufgaben können den Phasen Planung, Vorbereitung, Renovierung und Abschluss zugeordnet werden. Zeitangaben bleiben manuell; eine Abhängigkeit berechnet oder verschiebt keine Termine.
+
+Eine Aufgabe kann mehrere Vorgänger innerhalb desselben Projekts haben. Erst wenn alle Vorgänger erledigt sind, ist der Wechsel zu „In Arbeit“ oder „Erledigt“ möglich. Die zuständigen Personen können bereits vorher festgelegt werden. Der Fotovergleich zeigt zwei ausgewählte Bilder überlagert; Position und Zoom dienen dem passenden Ausschnitt.
 
 ## HTTPS im Heimnetz
 
@@ -56,7 +64,7 @@ Der zweite Befehl vertraut der lokalen Zertifikatsstelle für diesen Windows-Ben
 
 Auf iPhone/iPad das Zertifikatsprofil installieren und anschließend unter Allgemein → Info → Zertifikatsvertrauenseinstellungen das volle Vertrauen aktivieren. Auf dem Pixel das Zertifikat über die Zertifikatsinstallation für eine CA importieren; die genaue Bezeichnung hängt von der Android-Version ab. Eine Warnung lediglich zu überspringen reicht nicht.
 
-Erst nachdem die Adresse auf jedem Gerät ohne Zertifikatswarnung lädt: mit dem Haushaltskennwort anmelden und die App zum Homescreen hinzufügen. Auf Safari über das Teilen-Menü; auf Chrome/Edge über die angebotene Installation. Nach einem Geräteneustart erneut prüfen.
+Erst nachdem die Adresse auf jedem Gerät ohne Zertifikatswarnung lädt: Karla oder Marvin auswählen und die App zum Homescreen hinzufügen. Auf Safari über das Teilen-Menü; auf Chrome/Edge über die angebotene Installation. Nach einem Geräteneustart erneut prüfen.
 
 ## Automatischer Start
 
@@ -108,7 +116,7 @@ Mit einer ausgegebenen Snapshot-ID in einen **leeren** Ordner wiederherstellen:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Restore.ps1 -RepositoryDir 'E:\UnserZuhause-Backup' -SnapshotId 'DIE-AUSGEGEBENE-ID' -TargetDir 'C:\UnserZuhause-Wiederhergestellt'
 ```
 
-Die Passphrase wird verdeckt abgefragt und über Standardeingabe übergeben. Sie steht weder in der Befehlszeile noch im Protokoll. Vorhandene Dateien im Ziel führen zum Abbruch. Beschädigte Dateien, falsche Schlüssel und gefährliche Pfade werden abgelehnt. Vor erfolgreichem Abschluss werden die Datenbankintegrität und Datei-Prüfsummen geprüft. Alte Sitzungen und Retry-Kennungen werden entfernt; nach dem Start müsst ihr euch neu anmelden.
+Das Sicherungskennwort wird verdeckt abgefragt und über Standardeingabe übergeben. Es steht weder in der Befehlszeile noch im Protokoll. Vorhandene Dateien im Ziel führen zum Abbruch. Beschädigte Dateien, falsche Schlüssel und gefährliche Pfade werden abgelehnt. Vor erfolgreichem Abschluss werden die Datenbankintegrität und Datei-Prüfsummen geprüft. Alte Sitzungen und Retry-Kennungen werden entfernt; nach dem Start wählt ihr erneut Karla oder Marvin. Enthält ein älterer Sicherungsstand noch ein App-Kennwort, entfernt die Datenbankmigration es beim Start. Das Sicherungskennwort bleibt unverändert nötig, um das Archiv zu entschlüsseln.
 
 Zum Prüfen den neuen Datenpfad bei gestoppter App in `.runtime\config.json` eintragen und bei HTTPS-Betrieb die HTTPS-Konfiguration vor dem Start erneut erzeugen. Der Caddy-Speicherpfad muss zum neuen Datenordner passen; bei einem Umzug können außerdem Hostname und IP anders sein. Die vollständige Befehlsfolge steht in [howto.md, Abschnitt 9](../howto.md#9-daten-wiederherstellen). Nach dem Start Räume und Aufgaben ansehen, Originalfoto und Vorschau öffnen sowie ein Bildpaar vergleichen. Der alte Datenordner bleibt bis zum erfolgreichen Abschluss erhalten. Die gespeicherte `runtime-config.json` dient als Referenz und wird nicht ungeprüft aktiviert.
 

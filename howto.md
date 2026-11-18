@@ -1,6 +1,8 @@
 # Unser Zuhause – Installation und Betrieb
 
-Diese Anleitung führt vom Projektordner zur nutzbaren App auf Windows 11 und dem iPhone. Die App läuft auf deinem PC. Karla und Marvin melden sich mit einem gemeinsamen Haushaltskennwort an und wählen anschließend ihren Namen. Der gewählte Name kennzeichnet ihre Einträge; er ist kein getrennt geschütztes Benutzerkonto.
+Diese Anleitung führt vom Projektordner zur nutzbaren App auf Windows 11 und dem iPhone. Die App läuft auf deinem PC. Beim ersten Öffnen wählt ihr direkt Karla oder Marvin. Das Profil wird auf dem jeweiligen Gerät gemerkt; über „Profil wechseln“ oder „Zur Profilauswahl“ lässt es sich ändern.
+
+Die App hat kein Zugangskennwort. Wer das erlaubte Heimnetz und die App-Adresse erreicht, kann Inhalte lesen und ändern. Die Namen kennzeichnen Einträge und sind keine Zugangskontrolle. Das Sicherungskennwort und das Windows-Kennwort für den optionalen Autostart bleiben erforderlich.
 
 Die Befehle verwenden `C:\wxbapp` als Projektordner. Falls du einen anderen Ordner verwendest, passe diesen Pfad an. Texte wie `HIER_DEINE_IP_EINFUEGEN` sind Platzhalter: Ersetze sie vor dem Ausführen durch deine eigenen Werte. Tatsächliche Netzwerkadressen gehören nur in die lokale Konfiguration, nicht in diese Anleitung.
 
@@ -52,7 +54,7 @@ Du brauchst das **gesamte Repository**. Einzelne HTML- oder Skriptdateien reiche
 
 `.runtime`, `.tools`, `node_modules`, `dist` und lokale Haushaltsdaten werden durch `.gitignore` vom normalen Git-Upload ausgeschlossen. Ein Git-Push sichert den Programmcode, **nicht eure Fotos und Einträge**.
 
-## 3. Installieren und zuerst am PC einrichten
+## 3. Installieren und am PC starten
 
 Alle folgenden Befehle in PowerShell ausführen. In jedem neu geöffneten Fenster zuerst in den Projektordner wechseln:
 
@@ -69,11 +71,27 @@ Anschließend starten:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start.ps1 -OpenBrowser
 ```
 
-Nach wenigen Sekunden im PC-Browser **http://localhost:3210** öffnen beziehungsweise neu laden. Beim ersten Aufruf das gemeinsame Haushaltskennwort festlegen; die App zeigt die Kennwortanforderungen an. Es gibt kein Standardkennwort. Das Kennwort sicher aufbewahren: Es gibt keinen E-Mail-Link zum Zurücksetzen.
+Nach wenigen Sekunden im PC-Browser **http://localhost:3210** öffnen beziehungsweise neu laden. Beim ersten Aufruf erscheint direkt die Auswahl Karla/Marvin. Ein bereits gemerktes Profil bleibt normalerweise ausgewählt.
 
-Karla oder Marvin auswählen. Einen Raum, ein Projekt und eine Aufgabe anlegen; die Seite neu laden und prüfen, dass die Einträge erhalten bleiben. Bei einem bereits eingerichteten Haushalt erscheint die Anmeldung statt der Ersteinrichtung.
+Karla oder Marvin auswählen. Einen Raum, ein Projekt und eine Aufgabe anlegen; die Seite neu laden und prüfen, dass die Einträge erhalten bleiben. Der aktuelle Name bleibt sichtbar. Über „Profil wechseln“ oder „Zur Profilauswahl“ könnt ihr die Zuordnung auf diesem Gerät ändern.
 
-**Das Haushaltskennwort vor Schritt 5 einrichten.** Die Einrichtung ist zunächst nur über den lokalen PC-Zugang erlaubt. `localhost` auf dem iPhone bezeichnet das iPhone selbst und führt nicht zu deinem PC.
+HTTPS kann ohne vorherige Kennworteinrichtung eingerichtet werden. `localhost` auf dem iPhone bezeichnet das iPhone selbst und führt nicht zu deinem PC; dort verwendet ihr später die HTTPS-Adresse aus Schritt 5.
+
+### Projekte und Aufgaben planen
+
+Ein Projekt öffnen und den Reiter **Planung** wählen. Dort stehen **Liste**, **Board** und **Zeitachse** zur Verfügung. Die Liste eignet sich zum Bearbeiten einzelner Aufgaben, das Board für den Überblick und die Zeitachse für die eingetragenen Termine. Über **Aufgabe anlegen** oder das Bearbeiten einer vorhandenen Aufgabe die Phase **Planung, Vorbereitung, Renovierung oder Abschluss** auswählen.
+
+Für eine Aufgabenfolge legt ihr bei einer Aufgabe ihre Vorgänger aus demselben Projekt fest. Eine Aufgabe kann mehrere Vorgänger haben. Sie lässt sich erst auf **In Arbeit** oder **Erledigt** setzen, wenn alle ausgewählten Vorgänger erledigt sind. Beispiel: „Wand streichen“ wartet auf „Tapete entfernen“ und „Löcher verspachteln“.
+
+Karla, Marvin oder beide könnt ihr schon vorher zuweisen. Auch die Termine plant ihr selbst: Abhängigkeiten verschieben keine Daten und erstellen keinen automatischen Zeitplan.
+
+In der Aufgabenübersicht hilft der Filter **Startbereit**, die nächsten möglichen Arbeiten zu finden. Im Board zeigen **Starten**, **Erledigen** und **Sperre aufheben** die passende nächste Aktion. Eine manuell blockierte Aufgabe bleibt gesperrt, auch wenn ihre Vorgänger inzwischen fertig sind. Aufgaben ohne Termin stehen unterhalb der Zeitachse separat.
+
+Wenn ihr die Vorgänger einer bereits laufenden oder erledigten Aufgabe ändern möchtet, setzt diese Aufgabe im selben Formular wieder auf **Offen**. Einen erledigten Vorgänger könnt ihr erst wieder öffnen, wenn bereits laufende oder erledigte Nachfolger wieder offen sind oder die Verknüpfung bewusst entfernt wurde. Die App nennt betroffene Aufgaben in der Fehlermeldung.
+
+### Vorher und Nachher vergleichen
+
+Im Projekt Fotos hochladen und ein Vorher-/Nachher-Bildpaar auswählen. Der Vergleich zeigt beide Fotos übereinander; mit dem Schieberegler legt ihr mehr vom einen oder anderen Bild frei. Mit **Nur Vorher**, **Vergleichen** und **Nur Nachher** springt ihr zur entsprechenden Ansicht. Den Regler am PC mit der Tabulatortaste auswählen und mit den Pfeiltasten verschieben; am iPhone mit dem Finger ziehen. Bei unterschiedlichen Ausschnitten die Bildposition und den Zoom anpassen. Am besten funktioniert der Vergleich mit Fotos desselben Motivs aus einem ähnlichen Blickwinkel.
 
 ## 4. Heimnetzadresse vorbereiten
 
@@ -163,20 +181,20 @@ Das Skript vertraut dem Zertifikat für deinen Windows-Benutzer und legt die öf
 C:\wxbapp\.runtime\Zuhause-Zertifikat.crt
 ```
 
-Nun im PC-Browser `https://HIER_DEINE_IP_EINFUEGEN` mit deiner IP aufrufen. Die Seite muss ohne Zertifikatswarnung laden. Nach Aktivierung von HTTPS diese endgültige HTTPS-Adresse verwenden, auch am PC; die Anmeldung verwendet jetzt sichere Cookies.
+Nun im PC-Browser `https://HIER_DEINE_IP_EINFUEGEN` mit deiner IP aufrufen. Die Seite muss ohne Zertifikatswarnung laden. Nach Aktivierung von HTTPS diese endgültige HTTPS-Adresse verwenden, auch am PC; die Gerätesitzung verwendet jetzt sichere Cookies. Beim ersten Aufruf dieser Adresse gegebenenfalls erneut Karla oder Marvin auswählen.
 
 ### Auf dem iPhone
 
 1. **Nur** `Zuhause-Zertifikat.crt` auf das iPhone übertragen. Ein konkreter Weg: Die Datei selbst als E-Mail-Anhang an deine eigene Adresse senden und den Anhang auf dem iPhone in Apple Mail öffnen. Das ist das öffentliche Zertifikat; private Schlüssel und andere Dateien aus `.runtime\data\caddy` nicht übertragen.
 2. Nach dem Öffnen den Profildownload zulassen. In **Einstellungen → Profil geladen** das Profil öffnen und installieren; den Gerätecode eingeben. Falls dieser Hinweis nicht erscheint, unter **Allgemein → VPN und Geräteverwaltung** nachsehen. Installiere das gerade von deinem PC übertragene Zertifikat. Apples Anleitung erklärt die [Profilinstallation](https://support.apple.com/de-de/102400).
 3. Danach **Einstellungen → Allgemein → Info → Zertifikatsvertrauenseinstellungen** öffnen. Für die neue lokale Caddy-Zertifikatsstelle das volle Vertrauen aktivieren und bestätigen. Die Profilinstallation allein reicht für HTTPS nicht aus. Siehe [Apples Anleitung zum Zertifikatsvertrauen](https://support.apple.com/de-at/102390).
-4. Safari öffnen und die vollständige Adresse `https://HIER_DEINE_IP_EINFUEGEN` mit deiner IP eingeben. Die Seite muss ohne Zertifikatswarnung laden. Mit dem Haushaltskennwort anmelden und Karla oder Marvin auswählen.
+4. Safari öffnen und die vollständige Adresse `https://HIER_DEINE_IP_EINFUEGEN` mit deiner IP eingeben. Die Seite muss ohne Zertifikatswarnung laden. Karla oder Marvin auswählen.
 
 Diese Schritte auf jedem verwendeten iPhone oder iPad einzeln durchführen. Falls später eine neue lokale Zertifikatsstelle entsteht, etwa nach einer Neuinstallation ohne die alten Zertifikatsdaten, muss deren neues Zertifikat erneut eingerichtet werden.
 
 ### App zum Home-Bildschirm hinzufügen
 
-In Safari bei geöffneter App das Teilen-Menü öffnen; je nach Safari-Ansicht liegt es im Seitenmenü. **Zum Home-Bildschirm** wählen, falls angeboten **Als Web-App öffnen** aktivieren und **Hinzufügen** antippen. Das Symbol anschließend öffnen und bei Bedarf noch einmal anmelden. [Apple beschreibt den aktuellen Ablauf hier.](https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/ios)
+In Safari bei geöffneter App das Teilen-Menü öffnen; je nach Safari-Ansicht liegt es im Seitenmenü. **Zum Home-Bildschirm** wählen, falls angeboten **Als Web-App öffnen** aktivieren und **Hinzufügen** antippen. Das Symbol anschließend öffnen und bei Bedarf noch einmal Karla oder Marvin auswählen. [Apple beschreibt den aktuellen Ablauf hier.](https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/ios)
 
 Zum Abschluss auf dem iPhone eine Aufgabe anlegen und am PC prüfen, ob sie erscheint. Ein Foto hochladen und einen Vorher-Nachher-Vergleich testen. Diese Prüfung bestätigt auch die tatsächliche Verbindung zwischen euren Geräten.
 
@@ -210,7 +228,7 @@ Set-Location C:\wxbapp
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-Autostart.ps1
 ```
 
-Im Anmeldedialog das **Kennwort des Windows-Kontos** eingeben. Die Windows-Hello-PIN und das Haushaltskennwort sind hierfür nicht geeignet. Ohne ein für die Aufgabenplanung verwendbares Kontokennwort ist dieser Autostartweg nicht eingerichtet; manuelles Starten bleibt möglich.
+Im Anmeldedialog das **Kennwort des Windows-Kontos** eingeben. Die Windows-Hello-PIN ist hierfür nicht geeignet. Ohne ein für die Aufgabenplanung verwendbares Kontokennwort ist dieser Autostartweg nicht eingerichtet; manuelles Starten bleibt möglich.
 
 Falls die App vorher bewusst gestoppt wurde, `Start.ps1` einmal ausführen. Danach den PC kontrolliert neu starten und **vor der Windows-Anmeldung** vom iPhone prüfen, ob die App erreichbar wird. Damit ist der tatsächliche Autostart getestet. In der Windows-Aufgabenplanung heißt die Aufgabe **Unser Zuhause**; dort kann sie später deaktiviert werden.
 
@@ -246,7 +264,7 @@ Die Sicherung enthält Datenbank, Fotos/Vorschauen und vorhandenes lokales Zerti
 
 ## 9. Daten wiederherstellen
 
-Auf einem neuen PC zuerst den Projektcode holen und aus Schritt 3 nur die Installation ausführen; noch keinen neuen Haushalt einrichten. Zur Wiederherstellung brauchst du **den vollständigen Sicherungsordner und das Sicherungskennwort**. Die GitHub-Kopie allein enthält keine Haushaltsdaten.
+Auf einem neuen PC zuerst den Projektcode holen und aus Schritt 3 die Installation ausführen. Zur Wiederherstellung brauchst du **den vollständigen Sicherungsordner und das Sicherungskennwort**. Die GitHub-Kopie allein enthält keine Haushaltsdaten.
 
 ### Sicherungsstand in einen leeren Ordner entpacken
 
@@ -276,11 +294,11 @@ $config.dataDir = 'C:\UnserZuhause-Wiederhergestellt'
 $config | ConvertTo-Json | Set-Content .\.runtime\config.json -Encoding UTF8
 ```
 
-Auf einem frisch installierten PC ohne `config.json` zuerst `Start.ps1` und anschließend `Stop.ps1` ausführen, damit die lokale Konfiguration angelegt wird; **keinen neuen Haushalt einrichten**. Danach den Block oben ausführen. Die im Restore enthaltene `runtime-config.json` ist eine Referenz und wird nicht automatisch übernommen.
+Auf einem frisch installierten PC ohne `config.json` zuerst `Start.ps1` ausführen, einige Sekunden warten und anschließend `Stop.ps1` ausführen, damit die lokale Konfiguration angelegt wird. Danach den Block oben ausführen. Die im Restore enthaltene `runtime-config.json` ist eine Referenz und wird nicht automatisch übernommen.
 
 Für WLAN-/HTTPS-Betrieb **vor dem erneuten Start** Schritt 5 mit der richtigen Adresse wiederholen. Das erzeugt auch den Caddy-Speicherpfad für den neuen Datenordner. Dann starten und Schritt 6 für Windows ausführen. Auf dem iPhone nur dann ein neues Zertifikat installieren, wenn die Zertifikatsstelle gewechselt hat.
 
-Mit dem Haushaltskennwort des wiederhergestellten Standes neu anmelden. Räume und Aufgaben prüfen, Fotos öffnen und einen Bildvergleich testen. Alte Sitzungen werden bei einer Wiederherstellung absichtlich entfernt. Anschließend das Sicherungsziel nach Abschnitt 8 prüfen beziehungsweise neu einrichten. Die alten Daten erst entfernen, wenn die Wiederherstellung vollständig geprüft ist.
+Nach dem Start Karla oder Marvin auswählen. Räume und Aufgaben prüfen, Fotos öffnen und einen Bildvergleich testen. Alte Sitzungen werden bei einer Wiederherstellung absichtlich entfernt. Ein in älteren Sicherungen enthaltenes App-Kennwort wird beim Start durch die Datenbankmigration entfernt; die App öffnet die Profilauswahl. Das Sicherungskennwort zum Entschlüsseln des Archivs bleibt davon unberührt. Anschließend das Sicherungsziel nach Abschnitt 8 prüfen beziehungsweise neu einrichten. Die alten Daten erst entfernen, wenn die Wiederherstellung vollständig geprüft ist.
 
 ## 10. Programm aktualisieren
 
@@ -299,7 +317,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start.ps1
 
 Wenn `git status --short` eigene geänderte Dateien zeigt, diese vor dem Pull sichern beziehungsweise die Änderungen klären. Bei Git-Konflikten, Installations- oder Testfehlern nicht einfach weiter starten. `Install.ps1` baut die Oberfläche inklusive TypeScript-Prüfung neu; `Build.ps1` genügt nur, wenn die benötigten Pakete bereits installiert sind. Sollte sich die mitgelieferte Node-Version ändern, den Versionsordner in Befehlen entsprechend `Install.ps1` anpassen.
 
-Nach dem Start die App auf PC und iPhone schließen und neu öffnen. Anmeldung, Aufgaben und ein Foto kurz prüfen. Datenbankänderungen führt die App beim Start über Migrationen aus. Für die Rückkehr zu einem älteren Stand die dazu passende Programmversion und Sicherung verwenden.
+Nach dem Start die App auf PC und iPhone schließen und neu öffnen. Gewähltes Profil, Aufgaben und ein Foto kurz prüfen. Datenbankänderungen führt die App beim Start über Migrationen aus; dabei wird ein noch vorhandenes altes App-Kennwort entfernt. Für die Rückkehr zu einem älteren Stand die dazu passende Programmversion und Sicherung verwenden.
 
 ## 11. Wenn etwas nicht funktioniert
 

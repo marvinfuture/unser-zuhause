@@ -4,13 +4,7 @@ import express, {
   type Response,
   type RequestHandler,
 } from "express";
-import {
-  createHash,
-  randomBytes,
-  randomUUID,
-  scrypt,
-  timingSafeEqual,
-} from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
@@ -18,6 +12,7 @@ import { Store, type RecordKind, type SessionRow } from "./db.js";
 import {
   profiles,
   PROFILE_IDS,
+  TASK_PHASES,
   type AppState,
   type BaseRecord,
   type Collection,
@@ -25,6 +20,7 @@ import {
   type Session,
   type Photo,
   type Project,
+  type Task,
 } from "../shared/types.js";
 
 export class HttpError extends Error {
@@ -43,9 +39,9 @@ export class HttpError extends Error {
 export interface AppContext {
   app: Express;
   db: Store;
-  requireAuth: RequestHandler;
+  requireSession: RequestHandler;
   requireWrite: RequestHandler;
-  /** Liefert die aktuelle gültige Sitzung oder bricht mit HTTP 401 ab. */
+  /** Liefert die aktuelle Gerätesitzung oder fordert mit HTTP 401 einen neuen Einstieg an. */
   getSession(req: Request): SessionRow;
   /** Liefert das gewählte Profil einer gültigen Sitzung. */
   getActor(req: Request): ProfileId;
@@ -56,7 +52,6 @@ export interface AppOptions {
   dataDir: string;
   origin?: string;
   secureCookies?: boolean;
-  allowSetup?: boolean;
   distDir?: string;
   registerExtras?: (context: AppContext) => void;
 }
@@ -125,6 +120,15 @@ const schemas = {
     defectId: optionalId,
     priority,
     status: z.enum(["open", "active", "blocked", "done"]).default("open"),
+    phase: z.enum(TASK_PHASES).default("preparation"),
+    predecessorIds: z
+      .array(id)
+      .max(100)
+      .refine(
+        (values) => new Set(values).size === values.length,
+        "Eine Vorgängeraufgabe darf nur einmal ausgewählt werden.",
+      )
+      .default([]),
     assignees,
     startDate: optionalDay,
     dueDate: optionalDay,
@@ -195,47 +199,6 @@ function readBody<S extends z.ZodType>(schema: S, value: unknown): z.output<S> {
   return result.data;
 }
 /**
- * Leitet aus Kennwort und Salt asynchron einen 64-Byte-scrypt-Schlüssel ab. Die festgelegten Kosten erschweren das Erraten gespeicherter Kennwörter.
- */
-function derive(password: string, salt: string): Promise<Buffer> {
-  return new Promise((resolve, reject) =>
-    scrypt(
-      password,
-      salt,
-      64,
-      { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 },
-      (error, key) => (error ? reject(error) : resolve(key)),
-    ),
-  );
-}
-/**
- * Erzeugt für ein neues Kennwort einen zufälligen Salt und gibt Salt samt abgeleitetem Schlüssel als speicherbaren Text zurück.
- */
-async function passwordHash(password: string): Promise<string> {
-  const salt = randomBytes(24).toString("hex");
-  return `${salt}:${(await derive(password, salt)).toString("hex")}`;
-}
-/**
- * Prüft ein Kennwort gegen den gespeicherten Salt und Schlüssel; der abschließende Bytevergleich vermeidet inhaltsabhängige Vergleichszeiten.
- */
-async function passwordMatches(
-  password: string,
-  stored: string,
-): Promise<boolean> {
-  const [salt, key] = stored.split(":");
-  const actual = await derive(password, salt);
-  const expected = Buffer.from(key, "hex");
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
-}
-/**
- * Erkennt die erlaubten lokalen IPv4-/IPv6-Adressen der tatsächlichen TCP-Verbindung für die Ersteinrichtung.
- */
-function loopback(value: string | undefined): boolean {
-  return (
-    value === "127.0.0.1" || value === "::1" || value === "::ffff:127.0.0.1"
-  );
-}
-/**
  * Erkennt localhost und die vorgesehenen Loopback-Adressen in einem Host-Header; URL-Zusätze und manipulierte Hostangaben werden abgewiesen.
  */
 function localHost(value: string): boolean {
@@ -261,7 +224,6 @@ export function createApp(options: AppOptions): AppContext {
   const configuredHost = configuredOrigin
     ? new URL(configuredOrigin).host.toLowerCase()
     : undefined;
-  const authAttempts = new Map<string, { count: number; until: number }>();
   app.disable("x-powered-by");
   app.set("trust proxy", "loopback");
   /** Weist unbekannte Hostnamen ab, bevor sie private API-Routen erreichen können. */
@@ -343,7 +305,7 @@ export function createApp(options: AppOptions): AppContext {
     return value && /^[a-f0-9]{64}$/.test(value) ? value : undefined;
   }
   /**
-   * Sucht anhand des Cookie-Fingerabdrucks eine noch gültige Datenbanksitzung. Fehlende, widerrufene oder abgelaufene Anmeldungen ergeben undefined.
+   * Sucht anhand des Cookie-Fingerabdrucks eine noch gültige Gerätesitzung. Fehlende, zurückgesetzte oder abgelaufene Sitzungen ergeben undefined.
    */
   function findSession(req: Request): SessionRow | undefined {
     const token = tokenFrom(req);
@@ -353,7 +315,7 @@ export function createApp(options: AppOptions): AppContext {
       .get(hashToken(token), Date.now()) as SessionRow | undefined;
   }
   /**
-   * Liest die Sitzung erneut aus SQLite und meldet bei fehlender Anmeldung HTTP 401. So werden Widerrufe und Profilwechsel anderer Tabs sofort berücksichtigt.
+   * Liest die Sitzung erneut aus SQLite und meldet bei fehlender Sitzung HTTP 401. So werden Zurücksetzen und Profilwechsel anderer Tabs sofort berücksichtigt.
    */
   function getSession(req: Request): SessionRow {
     // Erneutes Lesen berücksichtigt Profilwechsel anderer Tabs sowie widerrufene Sitzungen.
@@ -361,8 +323,8 @@ export function createApp(options: AppOptions): AppContext {
     if (!session)
       throw new HttpError(
         401,
-        "Bitte meldet euch erneut an.",
-        "UNAUTHENTICATED",
+        "Bitte öffnet die App erneut, um eine Gerätesitzung zu erhalten.",
+        "SESSION_REQUIRED",
       );
     return session;
   }
@@ -403,9 +365,9 @@ export function createApp(options: AppOptions): AppContext {
     return session.profile_id;
   }
   /**
-   * Express-Middleware für lesende private Routen: nur gültige Haushaltssitzungen dürfen den nächsten Handler erreichen.
+   * Express-Middleware für Datenabrufe: eine automatisch vergebene Gerätesitzung ist nötig, sie ist kein persönlicher Identitätsnachweis.
    */
-  const requireAuth: RequestHandler = (req, _res, next) => {
+  const requireSession: RequestHandler = (req, _res, next) => {
     try {
       getSession(req);
       next();
@@ -434,27 +396,25 @@ export function createApp(options: AppOptions): AppContext {
   const ctx: AppContext = {
     app,
     db,
-    requireAuth,
+    requireSession,
     requireWrite,
     getSession,
     getActor,
     assertProfile,
   };
   /**
-   * Erstellt die öffentliche Sitzungsantwort ohne Kennworthash oder Cookie-Geheimnis. Das CSRF-Token wird nur für eine gültige Anmeldung mitgeliefert.
+   * Liefert Profilwahl, Versionsnummer und CSRF-Token der Gerätesitzung, ohne den verwendbaren Cookie-Wert auszugeben.
    */
-  function sessionView(session?: SessionRow): Session {
+  function sessionView(session: SessionRow): Session {
     return {
-      configured: !!db.getSetting("passwordHash"),
-      authenticated: !!session,
       profiles,
-      profileId: session?.profile_id ?? null,
-      profileVersion: session?.profile_version ?? 0,
-      ...(session ? { csrfToken: session.csrf_token } : {}),
+      profileId: session.profile_id,
+      profileVersion: session.profile_version,
+      csrfToken: session.csrf_token,
     };
   }
   /**
-   * Entfernt abgelaufene Sitzungen, speichert eine neue 30-Tage-Anmeldung und setzt den geschützten Cookie. Das ausgewählte Profil ist zunächst leer.
+   * Entfernt abgelaufene Sitzungen, speichert eine neue 30-Tage-Gerätesitzung und setzt den geschützten Cookie. Das Profil ist zunächst leer; ein Kennwort wird nicht verlangt.
    */
   function createSession(req: Request, res: Response): SessionRow {
     const token = randomBytes(32).toString("hex");
@@ -487,108 +447,21 @@ export function createApp(options: AppOptions): AppContext {
     });
     return row;
   }
-  /**
-   * Zählt Kennwortversuche je Client-Adresse im Arbeitsspeicher und sperrt nach zehn Versuchen für den Rest des 15-Minuten-Fensters.
-   */
-  function rateLimit(req: Request): void {
-    const key = req.ip ?? req.socket.remoteAddress ?? "unknown";
-    const now = Date.now();
-    for (const [k, v] of authAttempts)
-      if (v.until < now) authAttempts.delete(k);
-    const row = authAttempts.get(key) ?? { count: 0, until: now + 15 * 60_000 };
-    if (row.count >= 10)
-      throw new HttpError(
-        429,
-        "Zu viele Anmeldeversuche. Bitte in 15 Minuten erneut versuchen.",
-        "RATE_LIMIT",
-      );
-    row.count++;
-    authAttempts.set(key, row);
-  }
-  const passwordInput = z
-    .string()
-    .min(12, "Bitte mindestens 12 Zeichen für das Haushaltskennwort verwenden.")
-    .max(200);
-  /** GET /api/session: liefert Einrichtungs- und Anmeldestatus; ohne gültige Sitzung keine privaten Inhalte. */
-  app.get("/api/session", (req, res) =>
-    res.json(sessionView(findSession(req))),
-  );
-  /** POST /api/setup: richtet das Haushaltskennwort ausschließlich lokal und nur einmal ein; parallele Versuche werden innerhalb der Transaktion abgefangen. */
-  app.post("/api/setup", async (req, res) => {
+  /** GET /api/session: prüft die Herkunft und vergibt ohne Kennwort eine Sitzung; vorhandene Profilwahlen bleiben erhalten. */
+  app.get("/api/session", (req, res) => {
     checkOrigin(req);
-    rateLimit(req);
-    if (
-      options.allowSetup === false ||
-      !loopback(req.socket.remoteAddress) ||
-      !localHost(req.get("host") ?? "") ||
-      (req.get("X-Forwarded-For") &&
-        !req
-          .get("X-Forwarded-For")!
-          .split(",")
-          .every((ip) => loopback(ip.trim())))
-    )
-      throw new HttpError(
-        403,
-        "Die Ersteinrichtung ist nur direkt auf dem Zuhause-PC möglich.",
-        "LOCAL_SETUP_ONLY",
-      );
-    if (db.getSetting("passwordHash"))
-      throw new HttpError(
-        409,
-        "Der Haushalt ist bereits eingerichtet.",
-        "ALREADY_CONFIGURED",
-      );
-    const input = readBody(
-      z.object({ password: passwordInput }).strict(),
-      req.body,
-    );
-    const hash = await passwordHash(input.password);
-    db.transaction(() => {
-      if (db.getSetting("passwordHash"))
-        throw new HttpError(
-          409,
-          "Der Haushalt ist bereits eingerichtet.",
-          "ALREADY_CONFIGURED",
-        );
-      db.setSetting("passwordHash", hash);
-    });
-    res.status(201).json(sessionView(createSession(req, res)));
+    res.json(sessionView(findSession(req) ?? createSession(req, res)));
   });
-  /** POST /api/login: prüft das Haushaltskennwort, ersetzt eine vorhandene Gerätesitzung und liefert die neue Anmeldung ohne vorgewähltes Profil. */
-  app.post("/api/login", async (req, res) => {
-    checkOrigin(req);
-    rateLimit(req);
-    const input = readBody(
-      z.object({ password: z.string().min(1).max(200) }).strict(),
-      req.body,
-    );
-    const stored = db.getSetting<string>("passwordHash");
-    if (!stored || !(await passwordMatches(input.password, stored)))
-      throw new HttpError(
-        401,
-        "Das Haushaltskennwort stimmt nicht.",
-        "BAD_PASSWORD",
-      );
-    const existing = findSession(req);
-    if (existing)
+  /** DELETE /api/session: ersetzt nur die aktuelle Gerätesitzung und setzt ihre Profilwahl zurück; andere Geräte bleiben unverändert. */
+  app.delete("/api/session", requireWrite, (req, res) => {
+    const previous = getSession(req);
+    const replacement = db.transaction(() => {
       db.raw
         .prepare("DELETE FROM sessions WHERE token_hash=?")
-        .run(existing.token_hash);
-    authAttempts.delete(req.ip ?? req.socket.remoteAddress ?? "unknown");
-    res.json(sessionView(createSession(req, res)));
-  });
-  /** POST /api/logout: widerruft diese Sitzung serverseitig und entfernt den zugehörigen Browsercookie. */
-  app.post("/api/logout", requireWrite, (req, res) => {
-    db.raw
-      .prepare("DELETE FROM sessions WHERE token_hash=?")
-      .run(getSession(req).token_hash);
-    res.clearCookie(COOKIE, {
-      httpOnly: true,
-      secure: options.secureCookies ?? req.secure,
-      sameSite: "strict",
-      path: "/",
+        .run(previous.token_hash);
+      return createSession(req, res);
     });
-    res.json(sessionView());
+    res.json(sessionView(replacement));
   });
   /** POST /api/profile: wechselt Karla/Marvin nur bei passender Profilversion und gibt den aktualisierten Sitzungsstand zurück. */
   app.post("/api/profile", requireWrite, (req, res) => {
@@ -615,40 +488,8 @@ export function createApp(options: AppOptions): AppContext {
       );
     res.json(sessionView(getSession(req)));
   });
-  /** POST /api/password: prüft das bisherige Kennwort, ersetzt es konfliktgeschützt und widerruft sämtliche alten Anmeldungen. */
-  app.post("/api/password", requireWrite, async (req, res) => {
-    rateLimit(req);
-    const input = readBody(
-      z
-        .object({
-          currentPassword: z.string().max(200),
-          newPassword: passwordInput,
-        })
-        .strict(),
-      req.body,
-    );
-    const old = db.getSetting<string>("passwordHash")!;
-    if (!(await passwordMatches(input.currentPassword, old)))
-      throw new HttpError(
-        401,
-        "Das bisherige Kennwort stimmt nicht.",
-        "BAD_PASSWORD",
-      );
-    const newHash = await passwordHash(input.newPassword);
-    db.transaction(() => {
-      if (db.getSetting("passwordHash") !== old)
-        throw new HttpError(
-          409,
-          "Das Kennwort wurde inzwischen geändert.",
-          "VERSION_CONFLICT",
-        );
-      db.setSetting("passwordHash", newHash);
-      db.raw.exec("DELETE FROM sessions");
-    });
-    res.json(sessionView(createSession(req, res)));
-  });
-  /** GET /api/state: liefert nach Anmeldung den gemeinsamen Datenstand einschließlich archivierter Einträge für die Filter der Oberfläche. */
-  app.get("/api/state", requireAuth, (_req, res) => {
+  /** GET /api/state: liefert mit gültiger Gerätesitzung den gemeinsamen Datenstand einschließlich archivierter Einträge. */
+  app.get("/api/state", requireSession, (_req, res) => {
     const state: AppState = {
       profiles,
       rooms: db.list("rooms"),
@@ -724,6 +565,111 @@ export function createApp(options: AppOptions): AppContext {
     }
   }
   /**
+   * Prüft den vorgeschlagenen Aufgabenstand im selben Schreibvorgang wie das Speichern. Verhindert Kreise, fremde Projekte und einen Arbeitsbeginn vor allen Vorgängern; bestehende Nachfolger dürfen durch Wiederöffnen, Archivieren oder Verschieben nicht ungültig werden.
+   */
+  function checkTaskDependencies(
+    next: Task,
+    current?: Task,
+    explicitStatus?: unknown,
+  ): void {
+    const tasks = new Map(
+      db.list<Task>("tasks").map((task) => [task.id, task]),
+    );
+    tasks.set(next.id, next);
+    const dependencyChanged =
+      current &&
+      (current.predecessorIds.length !== next.predecessorIds.length ||
+        current.predecessorIds.some(
+          (value) => !next.predecessorIds.includes(value),
+        ));
+    if (
+      dependencyChanged &&
+      (current.status === "active" || current.status === "done") &&
+      explicitStatus !== "open"
+    )
+      throw new HttpError(
+        409,
+        "Setzt diese Aufgabe beim Ändern ihrer Vorgänger gleichzeitig auf offen zurück.",
+        "TASK_DEPENDENCY_CONFLICT",
+      );
+
+    const successors = [...tasks.values()].filter(
+      (task) => !task.archivedAt && task.predecessorIds.includes(next.id),
+    );
+    const invalidated = successors.filter(
+      (task) =>
+        next.archivedAt ||
+        !next.projectId ||
+        task.projectId !== next.projectId ||
+        (next.status !== "done" &&
+          (task.status === "active" || task.status === "done")),
+    );
+    if (invalidated.length)
+      throw new HttpError(
+        409,
+        `Diese Änderung würde folgende Nachfolger ungültig machen: ${invalidated.map((task) => `„${task.title}“`).join(", ")}. Öffnet sie zuerst wieder oder entfernt ihre Verknüpfung.`,
+        "TASK_DEPENDENCY_CONFLICT",
+      );
+
+    const predecessors: Task[] = [];
+    for (const predecessorId of next.predecessorIds) {
+      const predecessor = tasks.get(predecessorId);
+      if (predecessorId === next.id)
+        throw new HttpError(
+          400,
+          "Eine Aufgabe kann nicht ihr eigener Vorgänger sein.",
+          "INVALID_DEPENDENCY",
+        );
+      if (!predecessor)
+        throw new HttpError(
+          400,
+          "Eine Vorgängeraufgabe existiert nicht mehr.",
+          "INVALID_DEPENDENCY",
+        );
+      if (!next.projectId || predecessor.projectId !== next.projectId)
+        throw new HttpError(
+          400,
+          "Vorgänger und Nachfolger müssen demselben Projekt angehören.",
+          "INVALID_DEPENDENCY",
+        );
+      if (!next.archivedAt && predecessor.archivedAt)
+        throw new HttpError(
+          409,
+          `Die Vorgängeraufgabe „${predecessor.title}“ ist archiviert. Stellt sie zuerst wieder her oder entfernt die Verknüpfung.`,
+          "TASK_DEPENDENCY_CONFLICT",
+        );
+      predecessors.push(predecessor);
+    }
+
+    // Iteratives Durchlaufen bleibt auch bei langen Aufgabenketten ohne Rekursionslimit zuverlässig.
+    const pending = [...next.predecessorIds];
+    const visited = new Set<string>();
+    while (pending.length) {
+      const candidate = pending.pop()!;
+      if (candidate === next.id)
+        throw new HttpError(
+          400,
+          "Diese Verknüpfung würde einen Kreis zwischen Aufgaben erzeugen.",
+          "DEPENDENCY_CYCLE",
+        );
+      if (visited.has(candidate)) continue;
+      visited.add(candidate);
+      pending.push(...(tasks.get(candidate)?.predecessorIds ?? []));
+    }
+    if (
+      !next.archivedAt &&
+      (next.status === "active" || next.status === "done")
+    ) {
+      const waiting = predecessors.filter((task) => task.status !== "done");
+      if (waiting.length)
+        throw new HttpError(
+          409,
+          `Erledigt zuerst alle Vorgänger: ${waiting.map((task) => `„${task.title}“`).join(", ")}. Planung und Zuweisung sind schon möglich.`,
+          "TASK_NOT_READY",
+        );
+    }
+  }
+  /**
    * Schreibt eine automatische, nicht direkt bearbeitbare Projektnotiz mit dem handelnden Profil. Ohne Projektbezug wird kein Verlaufseintrag angelegt.
    */
   function event(projectId: unknown, actor: ProfileId, body: string): void {
@@ -783,8 +729,10 @@ export function createApp(options: AppOptions): AppContext {
           version: 1,
           archivedAt: null,
         } as BaseRecord & Record<string, unknown>;
-        if (collection === "tasks")
+        if (collection === "tasks") {
           record.completedBy = fields.status === "done" ? actor : null;
+          checkTaskDependencies(record as unknown as Task);
+        }
         if (collection === "shopping")
           record.purchasedBy = fields.purchased ? actor : null;
         if (collection === "notes") record.event = false;
@@ -853,13 +801,19 @@ export function createApp(options: AppOptions): AppContext {
                 ? null
                 : new Date().toISOString(),
         } as BaseRecord & Record<string, unknown>;
-        if (collection === "tasks")
+        if (collection === "tasks") {
           next.completedBy =
             next.status === "done"
               ? current.status === "done"
                 ? current.completedBy
                 : actor
               : null;
+          checkTaskDependencies(
+            next as unknown as Task,
+            current as unknown as Task,
+            patch.status,
+          );
+        }
         if (collection === "shopping")
           next.purchasedBy = next.purchased
             ? current.purchased

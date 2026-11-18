@@ -13,7 +13,6 @@ try {
     $env:APP_ORIGIN=$config.origin
     $env:PORT=[string]$config.port
     $env:SECURE_COOKIES=([bool]$config.https).ToString().ToLowerInvariant()
-    $env:ALLOW_SETUP=if ($config.https) { 'false' } else { 'true' }
     $env:NODE_ENV='production'
     $env:UZ_BACKUP_DIR=$config.backupDir
     $secretPath=Join-Path $runtimeRoot 'backup-key.dpapi'

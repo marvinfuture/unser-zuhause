@@ -10,3 +10,95 @@
 @media print{body{background:white;color:black;font-size:12pt}.sidebar,.topbar,.bottom-nav,.app-footer,.toolbar,.shopping-note,.page-heading .button,.bought-panel,.toast,.offline-banner,.modal{display:none!important}.main-area{margin:0}.main-content{max-width:none;padding:0}.page-heading{margin-bottom:25px}.page-heading .eyebrow{font-size:9pt}.page-heading h1{font-size:26pt}.page-heading p{font-size:10pt}.panel{border:0;box-shadow:none;border-radius:0}.shopping-row{padding:14px 0;break-inside:avoid;border-color:#bbb;gap:14px}.shopping-row .check-button{width:18px;height:18px;border:1px solid #888;border-radius:2px;background:white}.shopping-main strong{font-size:12pt;color:black}.shopping-main small,.quantity,.item-price{font-size:10pt;color:#555}.quantity span{font-size:10pt;color:#555}.row-edit,.shopping-row>.person{display:none}.list-heading{padding:10px 0;border-bottom:1px solid #999}.list-heading h2{font-size:18pt}.list-heading .count{font-size:10pt;color:#444}.project-tabs,.project-overview-strip,.back-link{display:none!important}.project-detail-grid{display:block}.empty .button{display:none}}
 .profile-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.record-history{display:flex;flex-direction:column;gap:6px;font-size:10px;color:#8b977d;line-height:1.6;border-top:1px solid #e6e9db;padding-top:16px;margin-top:23px}.record-history strong{font-weight:500;color:#728163}.archived-comparisons{margin:22px 0;padding:16px 19px;border:1px solid #dfe5d4;border-radius:9px;background:#f8f9f0}.archived-comparisons summary{cursor:pointer;font-size:12px;color:#7b8d67;min-height:30px}.archived-comparisons button{display:flex;width:100%;align-items:center;justify-content:space-between;min-height:44px;font-size:12px;text-align:left}.journal-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .trash-photo-placeholder{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;aspect-ratio:1.4;background:#edefe4;color:#a0ad90;font-size:11px}.trash-photo-placeholder.detail{aspect-ratio:auto;min-height:180px;border-radius:9px;margin-bottom:15px}.trash-photo-placeholder p{margin:0;text-align:center;padding:0 20px}
+.profile-home-note { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 24px 0 0 !important; font-size: 10px !important; color: #839174 !important; }
+.settings-profile { display: flex; align-items: center; gap: 16px; margin: 24px 0; }
+.settings-profile > div { display: flex; flex-direction: column; gap: 7px; }
+.settings-profile strong { font-family: Georgia, serif; font-size: 27px; font-weight: 500; color: #4f6744; }
+.settings-profile span:last-child { font-size: 11px; color: #8b997d; }
+.settings-card .action-wrap { margin-bottom: 0; }
+.task-waiting { display: flex; align-items: flex-start; gap: 5px; color: #987544; font-size: 10px; line-height: 1.6; margin: 3px 0 0; overflow-wrap: anywhere; }
+.task-waiting svg { margin-top: 2px; }
+.phase-label { font-size: 9px; color: #829470; letter-spacing: .02em; }
+.task-planning-fields { border-top: 1px solid #e4e9d9; border-bottom: 1px solid #e4e9d9; padding: 20px 0 7px; margin-bottom: 22px; }
+.predecessor-field { border: 0; padding: 0; margin: 0 0 15px; min-width: 0; }
+.predecessor-field legend { color: #5f7550; font-size: 12px; font-weight: 600; padding: 0; margin-bottom: 8px; }
+.predecessor-field > p { margin-bottom: 12px; }
+.predecessor-options { max-height: 220px; overflow: auto; border: 1px solid #dde5d2; border-radius: 8px; background: #fafbf4; }
+.modal .predecessor-option { display: flex; flex-direction: row; align-items: center; gap: 10px; min-height: 55px; margin: 0; padding: 10px 12px; border-bottom: 1px solid #e9ecdf; cursor: pointer; }
+.modal .predecessor-option:last-child { border-bottom: 0; }
+.predecessor-option > span { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.predecessor-option strong { font-size: 11px; font-weight: 500; overflow-wrap: anywhere; }
+.predecessor-option small { font-size: 9px; font-weight: 400; color: #93a082; }
+.predecessor-option input { flex-shrink: 0; }
+.predecessor-option > svg { color: #7d9c63; }
+.dependency-notice { display: flex; align-items: flex-start; gap: 7px; padding: 11px 13px; background: #f5eedb; border: 1px solid #e7ddc1; border-radius: 7px; color: #987b46 !important; font-size: 11px !important; margin: 12px 0 0 !important; }
+.dependency-notice svg { margin-top: 2px; }
+.project-tabs { gap: 18px; }
+.planning-heading { align-items: flex-start; margin-bottom: 20px; }
+.planning-heading h2 { font-size: 26px; }
+.phase-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
+.phase-summary { text-align: left; background: #fffdf8; border: 1px solid #e0e6d5; border-radius: 11px; padding: 17px; display: flex; flex-direction: column; gap: 11px; min-width: 0; }
+.phase-summary:hover, .phase-summary.selected { background: #edf2e3; border-color: #a9bc92; }
+.phase-summary-name { display: flex; align-items: center; gap: 8px; }
+.phase-summary-name > span { color: #b0b99e; font-family: Georgia, serif; font-size: 16px; }
+.phase-summary-name strong { font-size: 11px; font-weight: 600; color: #627a50; }
+.phase-summary-count { font-size: 10px; color: #92a080; }
+.phase-summary .progress-track { display: block; width: 100%; height: 4px; }
+.planning-toolbar { align-items: center; }
+.planning-options { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.planning-options > label { margin: 0 !important; font-size: 11px; color: #879675; }
+.planning-options select { font-size: 11px; min-width: 130px; }
+.planning-options .checkbox-label { font-size: 11px; }
+.phase-task-groups { display: flex; flex-direction: column; gap: 20px; }
+.phase-task-groups .list-heading h3, .undated-tasks .list-heading h3 { font-size: 21px; margin: 0; }
+.planning-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.board-column { padding: 12px; border-radius: 11px; background: #edeFe5; min-height: 180px; border: 1px solid #e1e5d7; min-width: 0; }
+.board-column.waiting { background: #f3eee1; border-color: #e8e0cc; }
+.board-column.active { background: #eaf0e2; border-color: #dce6d0; }
+.board-column.done { background: #e9f0e9; border-color: #d8e5d8; }
+.board-column > header { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 3px 3px 13px; }
+.board-column h3 { font-size: 20px; margin: 0; color: #637656; }
+.board-column.waiting h3 { color: #967a46; }
+.board-column.done h3 { color: #588063; }
+.board-empty { font-size: 10px; color: #99a288; line-height: 1.6; text-align: center; padding: 19px 8px; margin: 0; }
+.planning-task-card { border: 1px solid #dfe5d4; border-radius: 8px; background: #fffdf8; padding: 14px 12px 9px; margin-bottom: 11px; box-shadow: 0 2px 6px #41503304; min-width: 0; }
+.planning-task-card:last-child { margin-bottom: 0; }
+.board-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.board-card-top .priority { font-size: 9px; }
+.planning-task-card > .heading-button { display: block; width: 100%; min-height: 44px; margin: 0 0 9px; }
+.planning-task-card h4 { font-size: 12px; line-height: 1.55; font-weight: 600; margin: 0; color: #566b46; overflow-wrap: anywhere; }
+.planning-task-card > .date-label { display: flex; margin: 10px 0; font-size: 10px; }
+.planning-task-card .late { color: #a0664c; }
+.planning-task-card .task-waiting { font-size: 9px; margin-top: 10px; display: block; }
+.board-card-actions { border-top: 1px solid #e9ecdf; padding-top: 8px; margin-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.board-card-actions .button { font-size: 9px; padding: 8px; min-height: 40px; white-space: normal; text-align: left; }
+.board-card-actions .icon-button { min-width: 32px; }
+.planning-footnote { margin: 21px 0 0; font-size: 10px; color: #94a087; line-height: 1.8; }
+.timeline-scroll { width: 100%; overflow-x: auto; border: 1px solid #dfe6d4; border-radius: 11px; background: #fffdf8; }
+.gantt-grid { min-width: 720px; }
+.gantt-header, .gantt-row { display: grid; grid-template-columns: 230px minmax(0, 1fr); }
+.gantt-header { background: #edf2e4; border-bottom: 1px solid #dfe6d4; min-height: 51px; align-items: center; }
+.gantt-header > strong { font-size: 11px; color: #6b815a; font-weight: 600; padding: 15px 18px; }
+.gantt-dates { position: relative; height: 50px; border-left: 1px solid #dce5cf; }
+.gantt-dates > span { position: absolute; top: 19px; font-size: 9px; color: #8b9a77; white-space: nowrap; padding-left: 4px; }
+.gantt-row { min-height: 70px; border-bottom: 1px solid #e9ede0; }
+.gantt-row:last-child { border-bottom: 0; }
+.gantt-task-label { display: flex; flex-direction: column; justify-content: center; gap: 7px; text-align: left; padding: 13px 18px; border-right: 1px solid #e2e8d8; min-height: 70px; }
+.gantt-task-label:hover { background: #f5f7ed; }
+.gantt-task-label > strong { font-size: 11px; line-height: 1.4; font-weight: 500; color: #627952; overflow-wrap: anywhere; }
+.gantt-task-label > small { font-size: 9px; color: #99a789; line-height: 1.5; }
+.gantt-lane { position: relative; min-height: 70px; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(14.2857% - 1px), #edf1e5 calc(14.2857% - 1px), #edf1e5 14.2857%); }
+.gantt-bar { position: absolute; top: 22px; height: 26px; min-width: 7px; border-radius: 6px; background: #b4c49e; border: 1px solid #a6b78f; }
+.gantt-bar::before { content: ''; position: absolute; inset: -9px 0; }
+.gantt-bar.active { background: #88a66e; border-color: #6f9253; }
+.gantt-bar.waiting { background: #d4be90; border-color: #c4aa76; }
+.gantt-bar.done { background: #82a98c; border-color: #709e7c; }
+.gantt-bar.milestone { border-radius: 5px; background-image: repeating-linear-gradient(135deg, #ffffff00 0 5px, #ffffff40 5px 7px); }
+.planning-timeline > .tiny-note { margin: 12px 0 21px; }
+.undated-tasks { margin-top: 21px; }
+.compare-controls { display: flex; justify-content: center; align-items: center; gap: 9px; margin: 12px 0 20px; }
+.compare-controls .button { font-size: 11px; min-height: 44px; }
+.compare-controls .button[aria-pressed=true] { background: #e5edda; border-color: #a5bb8c; color: #567540; }
+@media(max-width:1230px) { .planning-board { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; } .board-card-actions .button { font-size: 11px; } .planning-task-card { padding: 17px 15px 10px; } .phase-summary { padding: 14px 12px; } .phase-summary-name { gap: 6px; } .phase-summary-name strong { font-size: 10px; } }
+@media(max-width:760px) { .project-tabs { gap: 16px; justify-content: flex-start; } .project-tabs button { flex-shrink: 0; padding-left: 3px; padding-right: 3px; } .phase-overview { gap: 9px; } .planning-heading h2 { font-size: 24px; } .planning-heading .button { font-size: 11px; } .planning-options select { min-height: 44px; font-size: 12px; } .planning-options .checkbox-label { font-size: 11px; } .planning-toolbar > .segmented { width: auto; } .board-card-actions .button { min-height: 44px; } .predecessor-option { min-height: 60px; } .task-waiting { font-size: 10px; } }
+@media(max-width:520px) { .phase-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 20px; } .phase-summary { padding: 16px; } .phase-summary-name strong { font-size: 11px; } .phase-summary-name { gap: 8px; } .phase-summary-count { font-size: 10px; } .planning-heading { flex-wrap: wrap; gap: 16px; } .planning-heading h2 { font-size: 25px; } .planning-heading .subtle { font-size: 11px; } .planning-board { grid-template-columns: 1fr; gap: 17px; } .board-column { padding: 15px; min-height: 125px; } .board-column > header h3 { font-size: 22px; } .planning-task-card h4 { font-size: 13px; } .board-card-actions .button { font-size: 11px; } .planning-task-card .task-waiting { font-size: 10px; } .planning-toolbar > .segmented { width: 100%; } .planning-options { width: 100%; justify-content: space-between; gap: 10px; } .planning-options select { min-width: 130px; font-size: 11px; } .planning-options .checkbox-label { font-size: 10px; gap: 6px !important; } .planning-footnote { font-size: 10px; } .phase-task-groups .list-heading h3 { font-size: 23px; } .compare-controls { gap: 7px; } .compare-controls .button { padding: 9px 10px; font-size: 10px; flex: 1; } .compare-controls .button svg { width: 13px; } .settings-profile { gap: 14px; } .settings-profile strong { font-size: 25px; } .settings-profile span:last-child { font-size: 10px; } }
