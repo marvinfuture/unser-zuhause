@@ -10,7 +10,8 @@ function Wait-ZuhauseReady([string]$Origin, [Diagnostics.Process]$Supervisor) {
             throw 'Der App-Start ist fehlgeschlagen. Bitte .runtime\logs\build.out.log, build.err.log und app.err.log prüfen. Der Browser wurde nicht geöffnet.'
         }
         try {
-            $response=Invoke-WebRequest -UseBasicParsing -Uri $Origin -Method Head -TimeoutSec 2 -ErrorAction Stop
+            # Windows kann schon für den Verbindungsaufbau zu localhost länger als zwei Sekunden benötigen.
+            $response=Invoke-WebRequest -UseBasicParsing -Uri $Origin -Method Head -TimeoutSec 5 -ErrorAction Stop
             if ($response.StatusCode -eq 200) { return }
         } catch {
             # Während des lokalen Builds oder HTTPS-Starts ist die Adresse kurzzeitig noch nicht erreichbar.
