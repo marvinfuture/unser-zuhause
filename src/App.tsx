@@ -80,6 +80,10 @@ import {
   type AuthorContext,
 } from './api';
 import { mergeEditorConflict, recordFormValues } from './editor-values';
+import CalendarView from './Calendar';
+import Rewards from './Rewards';
+import TaskHistory from './TaskHistory';
+import QuickTaskForm from './QuickTaskForm';
 
 type AnyRecord = BaseRecord & Record<string, any>;
 type EditorSpec = {
@@ -107,6 +111,7 @@ const projectStatus = {
 const taskStatus = { open: 'Offen', active: 'In Arbeit', blocked: 'Blockiert', done: 'Erledigt' };
 const defectStatus = { open: 'Offen', active: 'In Bearbeitung', resolved: 'Behoben' };
 const categoryLabels = { before: 'Vorher', progress: 'Zwischenstand', after: 'Nachher' };
+const shoppingCategories = { material: 'Material', tool: 'Werkzeug', household: 'Haushaltsbedarf' };
 const collectionLabels: Record<Collection, string> = {
   rooms: 'Raum',
   projects: 'Projekt',
@@ -138,6 +143,7 @@ const editorFieldLabels: Record<string, string> = {
   color: 'Farbe',
   icon: 'Symbol',
   archivedAt: 'Archiviert am',
+  completedBy: 'Erledigt von',
   beforeId: 'Vorher-Foto',
   afterId: 'Nachher-Foto',
   beforeX: 'Vorher · Horizontal',
@@ -221,7 +227,9 @@ function conflictValue(
     case 'phase':
       return taskPhaseLabels[value as Task['phase']];
     case 'category':
-      return value === 'tool' ? 'Werkzeug' : 'Material';
+      return shoppingCategories[value as ShoppingItem['category']];
+    case 'completedBy':
+      return name(value);
     case 'startDate':
     case 'dueDate':
     case 'archivedAt':
@@ -630,9 +638,10 @@ export default function App() {
         try {
           const current = await api<Session>('/session', { signal: controller.signal });
           if (epoch !== sessionEpoch.current || controller.signal.aborted) return;
-          const nextState = hasChosenProfile && current.profileId
-            ? await api<AppState>('/state', { signal: controller.signal })
-            : null;
+          const nextState =
+            hasChosenProfile && current.profileId
+              ? await api<AppState>('/state', { signal: controller.signal })
+              : null;
           if (epoch !== sessionEpoch.current || controller.signal.aborted) return;
           setSession(current);
           setState(nextState);
@@ -867,6 +876,7 @@ export default function App() {
     { id: 'overview', label: 'Übersicht', icon: House },
     { id: 'projects', label: 'Projekte', icon: FolderHeart },
     { id: 'tasks', label: 'Aufgaben', icon: ListTodo },
+    { id: 'calendar', label: 'Kalender', icon: CalendarDays },
     { id: 'shopping', label: 'Einkauf', icon: ShoppingBasket },
     { id: 'house', label: 'Unser Haus', mobile: 'Haus', icon: DoorOpen },
   ];
@@ -969,7 +979,19 @@ export default function App() {
                 <Projects />
               )
             ) : section === 'tasks' ? (
-              <TasksView />
+              route.split('/')[1] === 'everyday' ? (
+                <EverydayTasks />
+              ) : (
+                <TasksView />
+              )
+            ) : section === 'calendar' ? (
+              <div className="feature-page">
+                <CalendarView session={session} state={state} refresh={refresh} notify={notify} />
+              </div>
+            ) : section === 'rewards' ? (
+              <div className="feature-page">
+                <Rewards session={session} state={state} refresh={refresh} notify={notify} />
+              </div>
             ) : section === 'shopping' ? (
               <ShoppingView />
             ) : section === 'house' ? (
@@ -1205,6 +1227,14 @@ function Dashboard() {
           <span className="hero-art-label">Hier wächst etwas Schönes.</span>
         </div>
       </section>
+      <div className="action-wrap">
+        <a className="button secondary" href="#/tasks/everyday">
+          Alltagserledigungen
+        </a>
+        <a className="button secondary" href="#/rewards">
+          Punkte &amp; Belohnungen
+        </a>
+      </div>
       <div className="stats-grid">
         <Stat
           icon={<FolderHeart />}
@@ -1878,10 +1908,15 @@ function TasksView({ projectId, embedded = false }: { projectId?: string; embedd
           title="Eure Aufgaben"
           description="Was steht an, wer übernimmt es und was hat Vorrang?"
           action={
-            <button className="button primary" onClick={addTask}>
-              <Plus size={18} />
-              Aufgabe anlegen
-            </button>
+            <div className="action-wrap">
+              <a className="button secondary" href="#/tasks/everyday">
+                Alltagserledigungen
+              </a>
+              <button className="button primary" onClick={addTask}>
+                <Plus size={18} />
+                Aufgabe anlegen
+              </button>
+            </div>
           }
         />
       )}
@@ -1980,6 +2015,51 @@ function TasksView({ projectId, embedded = false }: { projectId?: string; embedd
   );
 }
 
+/** Bietet eine kurze gemeinsame Checkliste für projektfreie Erledigungen mit regulären Aufgaben. */
+function EverydayTasks() {
+  const { state, session, refresh } = useApp();
+  const tasks = active(state.tasks).filter((task) => !task.projectId);
+  const pending = tasks
+    .filter((task) => task.status !== 'done')
+    .sort(
+      (a, b) =>
+        priorityOrder[a.priority] - priorityOrder[b.priority] ||
+        (a.dueDate || '9999').localeCompare(b.dueDate || '9999'),
+    );
+  const completed = tasks.filter((task) => task.status === 'done');
+  return (
+    <>
+      <PageTitle
+        eyebrow="AUFGABEN"
+        title="Alltagserledigungen"
+        description="Eure gemeinsame Liste für kleine Dinge im Haus."
+        action={
+          <a className="button secondary" href="#/tasks">
+            Alle Aufgaben
+          </a>
+        }
+      />
+      <section className="panel settings-card">
+        <QuickTaskForm session={session} refresh={refresh} />
+        <h2>Noch zu erledigen</h2>
+        {pending.length ? (
+          pending.map((task) => <TaskRow key={task.id} task={task} compact />)
+        ) : (
+          <p>Aktuell ist alles abgehakt.</p>
+        )}
+        {completed.length > 0 && (
+          <details>
+            <summary>Erledigt ({completed.length})</summary>
+            {completed.map((task) => (
+              <TaskRow key={task.id} task={task} compact />
+            ))}
+          </details>
+        )}
+      </section>
+    </>
+  );
+}
+
 /**
  * Zeigt offene Einkäufe und eine getrennt aufklappbare Liste gekaufter Positionen. Projektfilter,
  * Archiv und Browserdruck arbeiten auf dem derzeit angezeigten gemeinsamen Datenstand.
@@ -2021,7 +2101,7 @@ function ShoppingView({ projectId, embedded = false }: { projectId?: string; emb
       <button className="shopping-main" onClick={() => edit('shopping', item)}>
         <strong>{item.title}</strong>
         <small>
-          {item.category === 'tool' ? 'Werkzeug' : 'Material'}
+          {shoppingCategories[item.category]}
           {' · '}
           {state.projects.find((p) => p.id === item.projectId)?.title || 'Allgemein fürs Haus'}
         </small>
@@ -2097,6 +2177,13 @@ function ShoppingView({ projectId, embedded = false }: { projectId?: string; emb
           </button>
         )}
       </div>
+      {!embedded && (
+        <p>
+          <a className="text-link" href="#/calendar/household">
+            Nachkauferinnerung für Haushaltsbedarf anlegen
+          </a>
+        </p>
+      )}
       <section className="panel printable-list">
         <div className="list-heading">
           <h2>Noch besorgen</h2>
@@ -2602,7 +2689,7 @@ function ProjectDetail({ id }: { id: string }) {
  * ausschließlich aus nicht archivierten Aufgaben gebildet; Ansichtswechsel ändern keine Termine.
  */
 function ProjectPlanning({ project }: { project: Project }) {
-  const { state, edit } = useApp();
+  const { state, edit, session, refresh } = useApp();
   const [view, setView] = useState<'list' | 'board' | 'timeline'>('list');
   const [grouped, setGrouped] = useState(true);
   const [phase, setPhase] = useState('all');
@@ -2616,6 +2703,7 @@ function ProjectPlanning({ project }: { project: Project }) {
         (a.dueDate || '9999').localeCompare(b.dueDate || '9999'),
     );
   const completed = tasks.filter((task) => task.status === 'done').length;
+  const nextStep = visible.find((task) => isReady(task, state.tasks));
   const ready = tasks.filter((task) => isReady(task, state.tasks)).length;
   const waiting = tasks.filter((task) => boardColumn(task, state.tasks) === 'waiting').length;
   return (
@@ -2642,6 +2730,24 @@ function ProjectPlanning({ project }: { project: Project }) {
           Aufgabe anlegen
         </button>
       </div>
+      {!project.archivedAt && (
+        <QuickTaskForm
+          key={project.id}
+          session={session}
+          refresh={refresh}
+          project={project}
+          phase={phase === 'all' ? undefined : (phase as Task['phase'])}
+        />
+      )}
+      {nextStep && (
+        <p>
+          <strong>Nächster startbereiter Schritt</strong>
+          {' · '}
+          <button className="text-link" onClick={() => edit('tasks', nextStep)}>
+            {nextStep.title}
+          </button>
+        </p>
+      )}
       <div className="phase-overview">
         {TASK_PHASES.map((key, index) => {
           const entries = tasks.filter((task) => task.phase === key);
@@ -4463,6 +4569,7 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
                 <select value={form.category} onChange={(e) => update('category', e.target.value)}>
                   <option value="material">Material</option>
                   <option value="tool">Werkzeug</option>
+                  <option value="household">Haushaltsbedarf</option>
                 </select>
               </label>
               <label>
@@ -4641,6 +4748,16 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
               </span>
             )}
           </div>
+        )}
+        {collection === 'tasks' && baseRecord && (
+          <TaskHistory
+            key={baseRecord.id}
+            task={baseRecord as Task}
+            label={(field) => editorFieldLabels[field]}
+            format={(field, value) =>
+              conflictValue('tasks', field, { ...baseRecord, [field]: value }, state)
+            }
+          />
         )}
         <div className="modal-actions spread">
           {baseRecord ? (

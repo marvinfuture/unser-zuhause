@@ -9,7 +9,7 @@ import { createApp } from "../server/app.js";
 /** Startet ausschließlich eine temporäre Testinstallation mit kleinen künstlichen Build-Dateien und entfernt sie nach dem Test. */
 async function deliveryFixture(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), "uz-delivery-"));
-  const dist = join(dir, "dist");
+  const dist = join(dir, ".checkout", "dist");
   await mkdir(join(dist, "assets"), { recursive: true });
   await Promise.all([
     writeFile(

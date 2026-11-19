@@ -1,6 +1,6 @@
 # Unser Zuhause
 
-Renovierungsapp für Karla und Marvin im Heimnetz. Die Anwendung läuft auf dem Windows-PC. Beim Öffnen oder Neuladen wählt ihr direkt Karla oder Marvin, auch auf bereits verwendeten Geräten. Während der Nutzung lässt sich die Auswahl über „Profil wechseln“ oder „Zur Profilauswahl“ ändern. Alle Daten bleiben im eingerichteten Datenordner.
+Renovierungsapp für Karla und Marvin im Heimnetz. Die Anwendung läuft auf dem Windows-PC. Beim Öffnen oder Neuladen wählt ihr direkt Karla oder Marvin, auch auf bereits verwendeten Geräten. Während der Nutzung lässt sich die Auswahl über „Profil wechseln“ oder „Zur Profilauswahl“ ändern. Projekte und Fotos werden lokal im eingerichteten Datenordner gespeichert. Aktiviert ihr freiwillig Handy-Erinnerungen, überträgt der PC die verschlüsselte Nachricht an den Push-Dienst des jeweiligen Geräts.
 
 Die App hat kein Zugangskennwort. Wer das erlaubte Heimnetz und die App-Adresse erreicht, kann Inhalte lesen und ändern. Die Namen kennzeichnen Einträge und sind keine Zugangskontrolle.
 
@@ -8,7 +8,9 @@ Die Funktionen umfassen Räume, Projekte, Aufgaben, Einkaufslisten, Hausmängel,
 
 Der Fotovergleich legt Vorher- und Nachher-Bild übereinander. Mit dem Schieberegler vergleicht ihr denselben Bildbereich; Ausschnitt und Zoom lassen sich anpassen. Der vereinbarte Umfang steht in [PLANUNG.md](PLANUNG.md).
 
-Die vollständige Schritt-für-Schritt-Anleitung für Programme, Installation, iPhone-Zugriff, Autostart, Sicherung und Updates findest du in [howto.md](howto.md).
+Der Kalender unterstützt einmalige Termine, Wochenserien und Nachkauferinnerungen. Die Alltagsliste und kleine Projektschritte lassen sich direkt abhaken. Jede Aufgabe hat einen Bearbeitungsverlauf. Auf Wunsch sammeln Karla und Marvin persönliche Punkte für selbst festgelegte Belohnungen.
+
+Die vollständige Schritt-für-Schritt-Anleitung für Programme, Installation, iPhone-Zugriff, Handy-Erinnerungen, Autostart, Sicherung und Updates findest du in [howto.md](howto.md).
 
 ## Auf diesem PC starten
 

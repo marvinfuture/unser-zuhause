@@ -9,6 +9,10 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { Store, type RecordKind, type SessionRow } from "./db.js";
+import { registerTaskHistory, recordTaskHistory } from "./task-history.js";
+import { registerCalendar } from "./calendar.js";
+import { registerPush } from "./push.js";
+import { registerRewards, recordTaskReward } from "./rewards.js";
 import {
   profiles,
   PROFILE_IDS,
@@ -136,7 +140,7 @@ const schemas = {
   shopping: z.object({
     title,
     projectId: optionalId,
-    category: z.enum(["material", "tool"]).default("material"),
+    category: z.enum(["material", "tool", "household"]).default("material"),
     quantity: z.number().positive().max(1_000_000).default(1),
     unit: z.string().trim().min(1).max(40).default("Stück"),
     unitPriceCents: z
@@ -188,7 +192,10 @@ const patchControl = z.object({
 /**
  * Prüft unbekannte Eingaben gegen das übergebene Zod-Schema und liefert die bereinigten Daten; ungültige Angaben werden als HTTP 400 gemeldet.
  */
-function readBody<S extends z.ZodType>(schema: S, value: unknown): z.output<S> {
+export function readBody<S extends z.ZodType>(
+  schema: S,
+  value: unknown,
+): z.output<S> {
   const result = schema.safeParse(value);
   if (!result.success)
     throw new HttpError(
@@ -839,6 +846,11 @@ export function createApp(options: AppOptions): AppContext {
           record.purchasedBy = fields.purchased ? actor : null;
         if (collection === "notes") record.event = false;
         db.put(collection, record);
+        if (collection === "tasks") {
+          const task = record as unknown as Task;
+          recordTaskHistory(db, undefined, task);
+          recordTaskReward(db, undefined, task);
+        }
         if (collection !== "notes")
           event(
             collection === "projects" ? record.id : fields.projectId,
@@ -928,6 +940,12 @@ export function createApp(options: AppOptions): AppContext {
               : actor
             : null;
         db.put(collection, next);
+        if (collection === "tasks") {
+          const previous = current as unknown as Task;
+          const task = next as unknown as Task;
+          recordTaskHistory(db, previous, task);
+          recordTaskReward(db, previous, task);
+        }
         if (
           collection !== "notes" &&
           (next.status !== current.status ||
@@ -945,6 +963,10 @@ export function createApp(options: AppOptions): AppContext {
     });
   }
 
+  registerCalendar(ctx);
+  registerTaskHistory(ctx);
+  registerRewards(ctx);
+  registerPush(ctx);
   options.registerExtras?.(ctx);
   /** Unbekannte API-Adressen liefern JSON mit HTTP 404 statt der HTML-Oberfläche. */
   app.use("/api", (_req, _res, next) =>
@@ -989,7 +1011,7 @@ export function createApp(options: AppOptions): AppContext {
       res.setHeader("Cache-Control", "no-store");
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
-      res.sendFile(join(dist, "index.html"));
+      res.sendFile("index.html", { root: dist });
     });
   }
   /** Einheitliche Fehlerantwort: erwartete Meldungen bleiben verständlich, unerwartete Serverdetails werden nur lokal protokolliert. */

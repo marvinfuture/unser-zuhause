@@ -690,6 +690,15 @@ export async function restoreBackup(
             .get(table)
         )
           database.exec(`DELETE FROM ${table}`);
+      // Ein wiederhergestellter Haushalt darf keine Push-Nachrichten auf frühere Geräte senden.
+      if (
+        database
+          .prepare(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'",
+          )
+          .get()
+      )
+        database.exec("DELETE FROM settings WHERE key LIKE 'push:%'");
       database.exec("PRAGMA wal_checkpoint(TRUNCATE)");
     } finally {
       database.close();

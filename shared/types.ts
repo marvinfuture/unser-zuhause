@@ -62,7 +62,7 @@ export interface Task extends BaseRecord {
 export interface ShoppingItem extends BaseRecord {
   title: string;
   projectId: string | null;
-  category: "material" | "tool";
+  category: "material" | "tool" | "household";
   quantity: number;
   unit: string;
   unitPriceCents: number | null;

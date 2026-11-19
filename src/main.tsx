@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles.css';
+import './features.css';
 
 /**
  * Fängt Renderfehler im Komponentenbaum ab und bietet einen Neustart der Ansicht statt einer leeren

@@ -5,6 +5,7 @@ Read PLANUNG.md for the approved scope. User approved implementation on 2026-11-
 On 2026-11-17 the user also approved all four ideas in IDEEN.md: password-free entry, task dependencies, project planning with phases/board/timeline, and the overlay photo slider. Push the completed, verified changes to the existing private GitHub repository.
 
 - Local Windows application, LAN only. No cloud deployment, public tunnel or paid service.
+- On 2026-11-19 the user approved the functional ideas I-05 through I-12 and chose separate balances for Karla and Marvin. I-13 (visual redesign) still requires a separate instruction. Optional Web Push uses outbound delivery only after device consent. The user's active installation runs on another Windows PC and the iPhone is already set up.
 - User approved password-free app access on 2026-11-17 and reiterated on 2026-11-18: each fresh page load opens directly to Karla/Marvin profile selection, including when a device session exists. Profiles provide voluntary attribution, not authentication. Preserve device sessions, CSRF protection, profile-version conflicts and LAN restrictions. Encrypted-backup and Windows-account passwords are separate and remain unchanged.
 - Keep actual household data and secrets outside Git. Use temporary test data for automated verification.
 - Implement small coherent units. Test session and origin protection, profile attribution, concurrency, upload handling and backup/restore before claiming completion.

@@ -99,6 +99,35 @@ Wenn ihr die Vorgänger einer bereits laufenden oder erledigten Aufgabe ändern 
 
 Im Projekt Fotos hochladen und ein Vorher-/Nachher-Bildpaar auswählen. Der Vergleich zeigt beide Fotos übereinander; mit dem Schieberegler legt ihr mehr vom einen oder anderen Bild frei. Mit **Nur Vorher**, **Vergleichen** und **Nur Nachher** springt ihr zur entsprechenden Ansicht. Den Regler am PC mit der Tabulatortaste auswählen und mit den Pfeiltasten verschieben; am iPhone mit dem Finger ziehen. Bei unterschiedlichen Ausschnitten die Bildposition und den Zoom anpassen. Am besten funktioniert der Vergleich mit Fotos desselben Motivs aus einem ähnlichen Blickwinkel.
 
+### Alltag, Projektschritte und Verlauf
+
+Unter **Aufgaben → Alltagserledigungen** einen Titel wie „Glaser anrufen“ eintragen und **Hinzufügen** wählen. Das Häkchen erledigt die Aufgabe. Über ihren Titel könnt ihr später jemanden zuweisen, eine Frist setzen oder den **Bearbeitungsverlauf** aufklappen. Dort seht ihr Person, Zeitpunkt sowie alte und neue Feldwerte. Bei Aufgaben aus einer älteren Version beginnt die detaillierte Aufzeichnung mit diesem Update.
+
+Im Projekt unter **Planung → Kleinen Projektschritt anlegen** genauso vorgehen. Jeder Schritt zählt als Aufgabe im Fortschrittsbalken. Der Klick auf den nächsten startbereiten Schritt öffnet die Details. Abhängigkeiten und Phasen lassen sich dort bearbeiten.
+
+### Kalender, Müllabfuhr und Haushaltsbedarf
+
+1. **Kalender → Termin anlegen** öffnen. Einen Titel, die Art und den ersten Termin eingeben.
+2. Für die Müllabfuhr die Wiederholung auswählen und als **Abstand in Wochen** beispielsweise **2** oder **4** eintragen. Ein Enddatum ist optional.
+3. Die gewünschten Personen, den Vorlauf und die Uhrzeit für Erinnerungen wählen. Voreingestellt sind beide Profile und der Vortag um 18 Uhr deutscher Zeit. Die Erinnerung lässt sich pro Serie abschalten.
+4. Einzelne Termine in der Monatsliste **Verschieben**, **Auslassen** oder **Abhaken**. Über **Termine und Serien verwalten** bearbeitet ihr die Serie. Fällige offene Erinnerungen bleiben im Kalender sichtbar.
+5. Für Seife oder Küchenpapier unter **Einkauf → Nachkauferinnerung für Haushaltsbedarf anlegen** das Intervall einstellen. Wenn etwas fehlt, beim betreffenden Termin **Auf die Einkaufsliste** wählen. Beide Geräte sehen denselben Einkaufsartikel. Wenn noch genug im Haus ist, genügt **Abhaken**.
+
+### Handy-Erinnerungen auf einem eingerichteten iPhone aktivieren
+
+1. Auf dem Hosting-PC zunächst das Update aus Abschnitt 10 installieren. Das iPhone mit dem Heim-WLAN verbinden und die vorhandene App über ihr Symbol auf dem Home-Bildschirm öffnen. Web Push erfordert iOS 16.4 oder neuer und die per HTTPS installierte Web-App. [WebKit-Dokumentation zu iPhone-Mitteilungen](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/)
+2. Karla oder Marvin auswählen. Unter **Kalender → Handy-Erinnerungen** beim ersten Einrichten die **Kontakt-E-Mail für den Push-Dienst** eintragen. Der Zustelldienst erhält sie als technischen Absenderkontakt.
+3. **Für Karla auf diesem Gerät aktivieren** beziehungsweise **Für Marvin auf diesem Gerät aktivieren** antippen und die Mitteilungen im iOS-Dialog erlauben. Danach **Testnachricht senden** wählen und den Eingang am iPhone prüfen. Für ein zweites Gerät die Aktivierung mit dem dort gewünschten Profil wiederholen.
+4. Damit Erinnerungen pünktlich ankommen, müssen der Hosting-PC und die App laufen und den Push-Dienst im Internet erreichen. Der Nachrichtentext wird verschlüsselt übertragen. Der Zugriff auf die App selbst erfolgt weiterhin im Heimnetz. Nach einer Datenwiederherstellung aktiviert ihr die Geräte erneut.
+
+iOS steuert die Anzeige auf dem Sperrbildschirm und berücksichtigt die persönlichen Fokus- und Mitteilungseinstellungen. Eine fällige Erinnerung lässt sich zusätzlich im Kalender aufrufen und dort abhaken. Das gewählte Empfangsprofil bleibt auf dem Gerät eingestellt, auch wenn ihr in der App den Namen wechselt. Unter **Auf diesem Gerät ausschalten** wird es abgemeldet.
+
+### Eigene Punkte und Belohnungen
+
+In der **Übersicht → Punkte & Belohnungen → Punkte einschalten** wählen. Für jede erstmals gewertete Aufgabe bekommt das Profil, das sie abhakt, einen Punkt. Wird die Aufgabe wieder geöffnet, bleibt dieser Punkt erhalten. Beim erneuten Abhaken gibt es keinen weiteren. Das gilt für Alltagserledigungen und Projektaufgaben.
+
+Über **Belohnung anlegen** einen Namen und den Preis in Punkten festlegen. Beide sehen den Katalog und ihre getrennten Guthaben. Wer eine Belohnung möchte, wählt das eigene Profil, dann **Einlösen → Jetzt einlösen**. Der Preis wird vom eigenen Konto abgebucht.
+
 ## 4. Heimnetzadresse vorbereiten
 
 ### PC-Adresse und Heimnetz ermitteln

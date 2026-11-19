@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { createApp } from "./app.js";
 import { registerMedia } from "./media.js";
 import { registerOperations } from "./operations.js";
+import { startPushScheduler } from "./push.js";
 
 const port = Number(process.env.PORT ?? 3210);
 if (!Number.isInteger(port) || port < 1 || port > 65535)
@@ -31,6 +32,7 @@ const server = ctx.app.listen(port, "127.0.0.1", () =>
     `Unser Zuhause läuft auf http://127.0.0.1:${port} (nur lokaler Backend-Zugang).`,
   ),
 );
+const stopPushScheduler = startPushScheduler(ctx.db);
 let stopping = false;
 /**
  * Leitet das Herunterfahren nur einmal ein, wartet auf HTTP-Anfragen und schließt danach SQLite. Nach zehn Sekunden wird ein hängender Prozess mit Fehlerstatus beendet.
@@ -38,7 +40,9 @@ let stopping = false;
 function stop() {
   if (stopping) return;
   stopping = true;
-  server.close(() => {
+  const stoppedPush = stopPushScheduler();
+  server.close(async () => {
+    await stoppedPush;
     ctx.db.close();
     process.exit(0);
   });

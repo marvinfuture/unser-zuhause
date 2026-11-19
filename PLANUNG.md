@@ -70,7 +70,9 @@ Muss bedeutet: ohne diese Funktion ist die erste Version nicht abnahmefähig. So
 
 **Soll für spätere Versionen:** Globale Suche, Aufgabenvorlagen, wiederkehrende Hausarbeiten, Kommentare, komfortabler Kalender, Kostensummen nach Projekt, kurze Videos und vorhandene Zeitrafferdateien.
 
-**Kann für spätere Versionen:** Budgetplanung mit Soll-Ist-Vergleich, Push-Erinnerungen, vollständige Offlinebearbeitung, gemeinsame XP und Abzeichen, illustriertes Haus und automatisch erzeugte Rückblickvideos. Keine Wettbewerbsrangliste zwischen euch und keine Bestrafung für Pausen.
+**Erweiterung vom 19. November 2026:** Kalender mit Terminserien, freiwillige Handy-Erinnerungen, Nachkauferinnerungen, Alltagserledigungen, kleine Projektschritte, Aufgabenverlauf und getrennte einlösbare Punkte für Karla und Marvin. Die Entscheidungen stehen in [IDEEN.md](IDEEN.md).
+
+**Kann für spätere Versionen:** Budgetplanung mit Soll-Ist-Vergleich, vollständige Offlinebearbeitung, Abzeichen, illustriertes Haus und automatisch erzeugte Rückblickvideos. Keine Wettbewerbsrangliste zwischen euch und keine Bestrafung für Pausen.
 
 Zum ersten Umfang gehören weder öffentliche Freigaben noch Handwerkerkonten, Fernzugriff, automatische Videoverarbeitung, KI-Auswertungen oder eine vollständige Haushaltsbuchführung.
 

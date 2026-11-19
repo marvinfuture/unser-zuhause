@@ -11,7 +11,11 @@ export type RecordKind =
   | "defects"
   | "notes"
   | "photos"
-  | "comparisons";
+  | "comparisons"
+  | "calendar"
+  | "calendarOverrides"
+  | "rewards"
+  | "rewardEntries";
 export interface SessionRow {
   token_hash: string;
   csrf_token: string;
@@ -43,7 +47,7 @@ export class Store {
     const latest = this.raw
       .prepare("SELECT MAX(version) AS version FROM migrations")
       .get() as { version: number | null };
-    if ((latest.version ?? 0) > 3)
+    if ((latest.version ?? 0) > 4)
       throw new Error("Diese Datenbank benötigt eine neuere App-Version.");
     if (!latest.version)
       this.transaction(() => {
@@ -84,6 +88,17 @@ export class Store {
         }
         this.raw
           .prepare("INSERT INTO migrations VALUES(3,?)")
+          .run(new Date().toISOString());
+      });
+    if ((latest.version ?? 0) < 4)
+      this.transaction(() => {
+        // Vor dem Update gespeicherte Änderungen lassen sich aus dem aktuellen Datensatz nicht rekonstruieren.
+        this.raw.exec(`CREATE TABLE task_history(
+          task_id TEXT NOT NULL, version INTEGER NOT NULL, actor TEXT NOT NULL, at TEXT NOT NULL,
+          action TEXT NOT NULL, changes TEXT NOT NULL CHECK(json_valid(changes)),
+          PRIMARY KEY(task_id, version))`);
+        this.raw
+          .prepare("INSERT INTO migrations VALUES(4,?)")
           .run(new Date().toISOString());
       });
   }

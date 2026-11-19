@@ -114,6 +114,98 @@ async function fixture(
   };
 }
 
+test("Aufgabenverlauf hält Personen, alte und neue Werte und damalige Projektnamen fest", async (t) => {
+  const { ctx, client, newClient } = await fixture(t);
+  const project = (await client.create("projects", { title: "Bad" })).body;
+  const task = (
+    await client.create("tasks", {
+      title: "Fuge prüfen",
+      projectId: project.id,
+    })
+  ).body;
+  const marvin = newClient();
+  await marvin.send("GET", "/api/session");
+  await marvin.choose("marvin");
+  const updated = await marvin.patch("tasks", task, {
+    title: "Fuge erneuern",
+    status: "done",
+    projectId: null,
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(
+    (await client.patch("tasks", task, { title: "Veraltet" })).status,
+    409,
+  );
+  await client.patch("projects", project, { title: "Badezimmer" });
+  await marvin.patch("tasks", updated.body, { title: "Fuge erneuern" });
+  const response = await client.send("GET", `/api/tasks/${task.id}/history`);
+  assert.equal(response.status, 200);
+  assert.equal(response.body.partial, false);
+  assert.deepEqual(
+    response.body.entries.map((e: { actor: string; action: string }) => [
+      e.actor,
+      e.action,
+    ]),
+    [
+      ["marvin", "changed"],
+      ["karla", "created"],
+    ],
+  );
+  const changes = response.body.entries[0].changes;
+  assert.deepEqual(
+    changes.find((c: { field: string }) => c.field === "title"),
+    { field: "title", before: "Fuge prüfen", after: "Fuge erneuern" },
+  );
+  assert.equal(
+    changes.find((c: { field: string }) => c.field === "projectId").beforeLabel,
+    "Bad",
+  );
+  assert.equal(
+    changes.find((c: { field: string }) => c.field === "completedBy").after,
+    "marvin",
+  );
+  const legacy = {
+    ...updated.body,
+    id: randomUUID(),
+    title: "Bestehende Aufgabe",
+  };
+  ctx.db.put("tasks", legacy);
+  const history = (await client.send("GET", `/api/tasks/${legacy.id}/history`))
+    .body;
+  assert.equal(history.partial, true);
+  assert.deepEqual(history.entries, [
+    {
+      version: 1,
+      action: "created",
+      actor: task.createdBy,
+      at: task.createdAt,
+      changes: [],
+    },
+  ]);
+});
+
+test("Langer Aufgabenverlauf lässt sich ohne ausgelassene oder doppelte Version zurückblättern", async (t) => {
+  const { client } = await fixture(t);
+  let task = (await client.create("tasks", { title: "Streichen" })).body;
+  for (let i = 1; i <= 27; i++) {
+    const result = await client.patch("tasks", task, {
+      description: "Stand " + i,
+    });
+    assert.equal(result.status, 200);
+    task = result.body;
+  }
+  const path = `/api/tasks/${task.id}/history`;
+  const first = (await client.send("GET", path)).body;
+  const last = (await client.send("GET", path + "?before=" + first.nextBefore))
+    .body;
+  assert.equal(first.entries.length, 25);
+  assert.equal(last.nextBefore, null);
+  assert.deepEqual(
+    [...first.entries, ...last.entries].map((e) => e.version),
+    Array.from({ length: 28 }, (_, i) => 28 - i),
+  );
+});
+
 /** Sendet eine Anfrage mit ausdrücklich gesetztem Host-Header, um freigegebene LAN-Adressen und DNS-Rebinding isoliert zu prüfen. */
 async function hostRequest(base: string, headers: Record<string, string>) {
   return new Promise<{ status: number; body: any; cookie?: string }>(
@@ -533,7 +625,7 @@ test("database and migration survive reopening without seed data or resets", asy
           n: number;
         }
       ).n,
-      3,
+      4,
     );
     assert.equal(
       (await client.send("GET", "/api/session")).body.profileId,
@@ -631,7 +723,7 @@ test("legacy migrations remove only app credentials and add task defaults withou
           .prepare("SELECT version FROM migrations ORDER BY version")
           .all()
           .map((row) => row.version),
-        [1, 2, 3],
+        [1, 2, 3, 4],
       );
       assert.equal(
         (
