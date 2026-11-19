@@ -1,4 +1,5 @@
 import { resolve, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createApp } from "./app.js";
 import { registerMedia } from "./media.js";
 import { registerOperations } from "./operations.js";
@@ -16,7 +17,7 @@ const ctx = createApp({
     process.env.SECURE_COOKIES === undefined
       ? undefined
       : process.env.SECURE_COOKIES === "true",
-  distDir: resolve("dist"),
+  distDir: fileURLToPath(new URL("../dist/", import.meta.url)),
   /**
    * Bindet Medien- und Betriebsrouten in die App ein, bevor deren abschließende Fehler- und Oberflächenrouten registriert werden.
    */

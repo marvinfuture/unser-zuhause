@@ -25,7 +25,7 @@ Dieser Plan beschreibt die vereinbarte Richtung der bestehenden App. Am 17. Nove
 
 Die neuen Festlegungen ersetzen die offenen Hosting-Varianten und die ursprünglich vorgeschlagene Kennwortanmeldung. Es gibt zwei frei wählbare Personenprofile innerhalb des gemeinsamen Haushalts.
 
-**Freigegebener Einstieg:** Beim ersten Öffnen auf einem Gerät Karla oder Marvin wählen. Eine automatisch angelegte Gerätesitzung merkt sich die Auswahl bis zu 30 Tage. Das Profil bleibt sichtbar und lässt sich wechseln oder auf die Profilauswahl zurücksetzen. Wer die App im freigegebenen Heimnetz erreicht, kann die gemeinsamen Inhalte nutzen. Die Profilwahl ist keine Zugangssperre. Sicherungsverschlüsselung und Windows-Autostart behalten ihre getrennten Kennwörter.
+**Freigegebener Einstieg, am 18. November 2026 präzisiert:** Bei jedem Öffnen oder Neuladen direkt Karla oder Marvin wählen. Die automatisch angelegte Gerätesitzung kann bis zu 30 Tage bestehen, überspringt aber die Auswahl beim Laden der Seite nicht. Während der Nutzung bleibt das Profil sichtbar und lässt sich wechseln oder auf die Profilauswahl zurücksetzen. Wer die App im freigegebenen Heimnetz erreicht, kann die gemeinsamen Inhalte nutzen. Die Profilwahl ist keine Zugangssperre. Sicherungsverschlüsselung und Windows-Autostart behalten ihre getrennten Kennwörter.
 
 Die Profilwahl ist eine freiwillige Zuordnung innerhalb eures Haushalts. Wer Zugang hat, kann auch den anderen Namen auswählen. Ein Namensschild ist deshalb kein Nachweis, welche Person tatsächlich am Gerät saß. Für euren Wunsch nach einfacher gemeinsamer Nutzung ist dieses Modell passend.
 
@@ -127,7 +127,7 @@ Die erste Version benötigt eine Verbindung zum Heimserver für private Inhalte 
 
 | Ablauf | Geplanter Weg |
 | --- | --- |
-| Einstieg | Karla oder Marvin wählen → Übersicht öffnen; auf bekannten Geräten direkt zum ausgewählten Profil |
+| Einstieg | Bei jedem Öffnen oder Neuladen Karla oder Marvin wählen → Übersicht öffnen; keine Kennwortseite |
 | Nächstes Projekt | Raum wählen → Projekt benennen → Wunschzeitraum und Priorität setzen → in „Als Nächstes“ einordnen |
 | Arbeit verteilen | Aufgabe im Projekt anlegen → Karla, Marvin, beide oder offen wählen → Priorität und bei Bedarf Termin setzen |
 | Einkaufen | Benötigte Materialien im Projekt ergänzen → gemeinsame Einkaufsliste öffnen → bei Bedarf ausdrucken → gekaufte Positionen abhaken |

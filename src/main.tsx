@@ -43,7 +43,7 @@ createRoot(document.getElementById('root')!).render(
 if ('serviceWorker' in navigator && window.isSecureContext) {
   // Die optionale PWA-Registrierung wartet auf den Seitenaufbau und läuft nur in einem sicheren Kontext.
   window.addEventListener('load', () =>
-    navigator.serviceWorker.register('/sw.js').catch(() => {
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {
       /* Die Webapp bleibt auch ohne PWA-Installation nutzbar. */
     }),
   );

@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "tsx watch server/index.ts",
     "build": "tsc --noEmit && vite build",
+    "prestart": "node scripts/build-state.ts check",
     "start": "tsx server/index.ts",
     "test": "tsx --test tests/*.test.ts",
     "check": "tsc --noEmit"

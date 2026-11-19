@@ -1,6 +1,6 @@
 # Unser Zuhause
 
-Renovierungsapp für Karla und Marvin im Heimnetz. Die Anwendung läuft auf dem Windows-PC. Beim ersten Öffnen wählt ihr direkt euer Profil; die App merkt sich die Auswahl auf dem jeweiligen Gerät. Über „Profil wechseln“ oder „Zur Profilauswahl“ lässt sich die Auswahl ändern. Alle Daten bleiben im eingerichteten Datenordner.
+Renovierungsapp für Karla und Marvin im Heimnetz. Die Anwendung läuft auf dem Windows-PC. Beim Öffnen oder Neuladen wählt ihr direkt Karla oder Marvin, auch auf bereits verwendeten Geräten. Während der Nutzung lässt sich die Auswahl über „Profil wechseln“ oder „Zur Profilauswahl“ ändern. Alle Daten bleiben im eingerichteten Datenordner.
 
 Die App hat kein Zugangskennwort. Wer das erlaubte Heimnetz und die App-Adresse erreicht, kann Inhalte lesen und ändern. Die Namen kennzeichnen Einträge und sind keine Zugangskontrolle.
 
@@ -24,7 +24,9 @@ Die App starten:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start.ps1 -OpenBrowser
 ```
 
-Die erste lokale Adresse ist **http://localhost:3210**. Dort Karla oder Marvin auswählen. Auf einem bereits verwendeten Gerät bleibt das gemerkte Profil normalerweise erhalten.
+Die erste lokale Adresse ist **http://localhost:3210**. Dort direkt Karla oder Marvin auswählen. Es gibt keine Seite zum Einrichten oder Eingeben eines App-Kennworts.
+
+Beim Start wird geprüft, ob die gebaute Oberfläche zum aktuellen Quellcode passt. Eine fehlende oder veraltete Oberfläche wird mit den bereits installierten Werkzeugen neu gebaut. Nach einem Git-Update die App stoppen und neu starten. Zeigt ein schon offener Browser noch die frühere Kennwortseite, einmal mit **Strg+F5** vollständig neu laden; auf dem iPhone die Seite in Safari neu laden und die installierte Web-App gegebenenfalls schließen und erneut öffnen.
 
 Der lokale Start allein macht die App noch nicht im WLAN erreichbar. Für Handyzugriff und PWA-Installation wird die HTTPS-Einrichtung benötigt.
 
@@ -64,7 +66,7 @@ npm run check
 npm run build
 ```
 
-Die Tests verwenden getrennte temporäre Daten. Der Server wird mit `npm start` gestartet; `npm run dev` startet den Server im Beobachtungsmodus. Die React-Oberfläche muss gebaut werden oder separat mit `npx vite` laufen. Ein Vite-Entwicklungsserver ist nicht für den Dauerbetrieb vorgesehen.
+Die Tests verwenden getrennte temporäre Daten. Für einen manuellen Start prüft `npm start` die gebaute Oberfläche. Meldet die Prüfung eine fehlende oder veraltete Version, erst `npm run build` und dann erneut `npm start` ausführen. Für die Entwicklung startet `npm run dev` den Server im Beobachtungsmodus und `npx vite` bei Bedarf die Oberfläche separat.
 
 ## Noch am realen Aufbau abzunehmen
 

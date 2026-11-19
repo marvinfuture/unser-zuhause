@@ -847,21 +847,41 @@ export function createApp(options: AppOptions): AppContext {
   );
   if (options.distDir && existsSync(join(options.distDir, "index.html"))) {
     const dist = resolve(options.distDir);
-    /** Liefert gebaute öffentliche Dateien; Service Worker und Manifest sollen nicht mit langem Cache veralten. */
+    /** Liefert gebaute öffentliche Dateien; HTML wird niemals als wiederverwendbare App-Oberfläche gespeichert. */
     app.use(
       express.static(dist, {
         index: false,
         maxAge: "1h",
-        /** Verhindert lange Cache-Laufzeiten für Dateien, die PWA-Updates steuern. */
+        /** Verhindert veraltete Einstiegseiten auch bei direktem /index.html-Aufruf; PWA-Steuerdateien müssen revalidiert werden. */
         setHeaders: (res, path) => {
-          if (path.endsWith("sw.js") || path.endsWith("manifest.webmanifest"))
+          if (path.toLowerCase().endsWith(".html")) {
+            res.setHeader("Cache-Control", "no-store");
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
+          } else if (
+            path.endsWith("sw.js") ||
+            path.endsWith("manifest.webmanifest")
+          )
             res.setHeader("Cache-Control", "no-cache");
         },
       }),
     );
-    /** Die React-Oberfläche übernimmt gültige Browserseiten; index.html wird vor Wiederverwendung beim Server geprüft. */
+    /** Fehlende Build-Dateien erhalten einen echten Fehler statt einer HTML-Antwort unter einer JavaScript- oder CSS-Adresse. */
+    app.use("/assets", (_req, res, next) => {
+      res.setHeader("Cache-Control", "no-store");
+      next(
+        new HttpError(
+          404,
+          "Diese App-Datei wurde nicht gefunden. Bitte die Seite neu laden.",
+          "ASSET_NOT_FOUND",
+        ),
+      );
+    });
+    /** Die React-Oberfläche übernimmt Browserseiten; jeder Einstieg muss den aktuellen HTML-Stand vom Server beziehen. */
     app.get("/{*path}", (_req, res) => {
-      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(join(dist, "index.html"));
     });
   }

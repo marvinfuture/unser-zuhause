@@ -9,6 +9,15 @@ try {
     $self=Get-Process -Id $PID
     @{pid=$PID;startedAt=$self.StartTime.ToUniversalTime().ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runtimeRoot 'supervisor.json') -Encoding UTF8
     $config=Read-ZuhauseConfig
+    if (Test-Path -LiteralPath (Join-Path $runtimeRoot 'stop.request')) { return }
+    $occupied=Get-NetTCPConnection -State Listen -LocalPort $config.port -ErrorAction SilentlyContinue
+    if ($occupied) { throw ('Port ' + $config.port + ' ist bereits belegt. Vor einem Neubau den vorhandenen Server beenden.') }
+    $logs=Join-Path $runtimeRoot 'logs'
+    New-Item -ItemType Directory -Force -Path $logs | Out-Null
+    # Der Supervisor-Lock verhindert parallele Starts; vor dem Serverstart wird ausschließlich die Oberfläche abgeglichen.
+    $buildArguments='"'+(Join-Path $PSScriptRoot 'build-state.ts')+'" ensure'
+    $build=Start-Process -FilePath $node -ArgumentList $buildArguments -WorkingDirectory $projectRoot -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $logs 'build.out.log') -RedirectStandardError (Join-Path $logs 'build.err.log')
+    if ($build.ExitCode -ne 0) { throw 'Die Oberfläche konnte nicht aktualisiert werden. Siehe .runtime\logs\build.out.log und build.err.log. Die App wurde nicht gestartet.' }
     $env:DATA_DIR=[IO.Path]::GetFullPath($config.dataDir)
     $env:APP_ORIGIN=$config.origin
     $env:PORT=[string]$config.port
@@ -24,7 +33,6 @@ try {
     New-Item -ItemType Directory -Force -Path $env:DATA_DIR | Out-Null
     Protect-ZuhauseDirectory $env:DATA_DIR
     $config | ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $env:DATA_DIR 'runtime-config.json')
-    $logs=Join-Path $runtimeRoot 'logs'; New-Item -ItemType Directory -Force -Path $logs | Out-Null
     # Startet einen verwalteten Prozess ohne sichtbares Fenster und begrenzt dessen Protokolle durch Rotation beim Neustart.
     function Launch-Owned([string]$Name,[string]$Executable,[string]$Arguments) {
         foreach ($suffix in @('out','err')) {

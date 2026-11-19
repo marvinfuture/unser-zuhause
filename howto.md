@@ -1,6 +1,6 @@
 # Unser Zuhause – Installation und Betrieb
 
-Diese Anleitung führt vom Projektordner zur nutzbaren App auf Windows 11 und dem iPhone. Die App läuft auf deinem PC. Beim ersten Öffnen wählt ihr direkt Karla oder Marvin. Das Profil wird auf dem jeweiligen Gerät gemerkt; über „Profil wechseln“ oder „Zur Profilauswahl“ lässt es sich ändern.
+Diese Anleitung führt vom Projektordner zur nutzbaren App auf Windows 11 und dem iPhone. Die App läuft auf deinem PC. Beim Öffnen oder Neuladen wählt ihr direkt Karla oder Marvin, auch bei einer bereits vorhandenen Gerätesitzung. Während der Nutzung lässt sich der Name über „Profil wechseln“ oder „Zur Profilauswahl“ ändern.
 
 Die App hat kein Zugangskennwort. Wer das erlaubte Heimnetz und die App-Adresse erreicht, kann Inhalte lesen und ändern. Die Namen kennzeichnen Einträge und sind keine Zugangskontrolle. Das Sicherungskennwort und das Windows-Kennwort für den optionalen Autostart bleiben erforderlich.
 
@@ -71,7 +71,7 @@ Anschließend starten:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start.ps1 -OpenBrowser
 ```
 
-Nach wenigen Sekunden im PC-Browser **http://localhost:3210** öffnen beziehungsweise neu laden. Beim ersten Aufruf erscheint direkt die Auswahl Karla/Marvin. Ein bereits gemerktes Profil bleibt normalerweise ausgewählt.
+Nach wenigen Sekunden im PC-Browser **http://localhost:3210** öffnen beziehungsweise neu laden. Es erscheint direkt die Auswahl Karla/Marvin. Das gilt auch auf einem bereits verwendeten Gerät; ein App-Kennwort wird weder eingerichtet noch abgefragt.
 
 Karla oder Marvin auswählen. Einen Raum, ein Projekt und eine Aufgabe anlegen; die Seite neu laden und prüfen, dass die Einträge erhalten bleiben. Der aktuelle Name bleibt sichtbar. Über „Profil wechseln“ oder „Zur Profilauswahl“ könnt ihr die Zuordnung auf diesem Gerät ändern.
 
@@ -325,6 +325,7 @@ Nach dem Start die App auf PC und iPhone schließen und neu öffnen. Gewähltes 
 | --- | --- |
 | `git` wird nicht gefunden | Git installieren und PowerShell neu öffnen. |
 | Erste lokale Seite lädt nicht | Nach `Start.ps1` kurz warten, dann `http://localhost:3210` neu laden. Bei bestehender HTTPS-Konfiguration die HTTPS-Adresse verwenden. Protokolle prüfen. |
+| Alte Kennwortseite oder „Diese Funktion wurde nicht gefunden“ | Die frühere Oberfläche ist noch geladen. App mit `Stop.ps1` stoppen und mit `Start.ps1` neu starten; fehlende oder veraltete Builddateien werden dabei automatisch neu erstellt. Danach am PC **Strg+F5**, auf dem iPhone Safari neu laden und die installierte Web-App gegebenenfalls schließen und wieder öffnen. Kein Kennwort eingeben. |
 | „Port 3210 belegt“ | Prüfen, ob ein manuell gestarteter Entwicklungsserver läuft. Diesen in seinem ursprünglichen Terminal beenden. Nicht beliebige Node-Prozesse abschießen. |
 | PC erreicht HTTPS, iPhone nicht | PC wach, richtige IP, iPhone im normalen Heim-WLAN, Windows-Profil privat und Schritt 5 einschließlich Firewall erfolgreich? Router-Geräteisolation/Gastnetz prüfen. |
 | Zertifikatswarnung | Stimmt die aufgerufene IP bzw. der Name mit der Einrichtung überein? Zertifikat aus Schritt 6 installiert **und** volles Vertrauen aktiviert? Datum/Uhrzeit der Geräte prüfen. |
@@ -346,9 +347,10 @@ HTTPS-Protokolle entstehen erst nach der entsprechenden Einrichtung. Weitere Aus
 
 Die benannten Funktionen, Komponenten und Methoden tragen direkt darüber einen deutschen Kommentar zu ihrem Zweck. Die Regel steht auch in [AGENTS.md](AGENTS.md), damit sie bei späteren Änderungen beibehalten wird. Einstiegspunkte sind `src\main.tsx` und `src\App.tsx` für die Oberfläche sowie `server\index.ts` und `server\app.ts` für den Server.
 
-Nach Codeänderungen im Projektordner prüfen und bauen:
+Vor einem Neubau die App stoppen. Danach im Projektordner prüfen und bauen:
 
 ```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Stop.ps1
 $env:PATH = 'C:\wxbapp\.tools\node-v26.13.1-win-x64;' + $env:PATH
 npm.cmd test
 npm.cmd run build

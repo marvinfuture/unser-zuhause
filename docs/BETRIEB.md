@@ -26,7 +26,7 @@ Der Datenordner kann beim ersten Start mit `Start.ps1 -DataDir 'D:\UnserZuhause'
 
 1. `scripts\Install.ps1` ausführen, wenn Laufzeit oder Abhängigkeiten fehlen. Die portable Node-Datei wird von nodejs.org geladen und anhand der veröffentlichten SHA-256-Prüfsumme kontrolliert. Pakete werden anhand der Sperrdatei installiert.
 2. `scripts\Start.ps1 -OpenBrowser` ausführen.
-3. Unter `http://localhost:3210` direkt Karla oder Marvin wählen. Ein bereits gemerktes Profil bleibt normalerweise ausgewählt.
+3. Unter `http://localhost:3210` direkt Karla oder Marvin wählen. Bei jedem Öffnen oder Neuladen erscheint diese Auswahl erneut, auch bei vorhandener Gerätesitzung.
 4. Einen Raum, ein Projekt und eine Aufgabe anlegen und nach Neuladen prüfen.
 
 Beim Öffnen legt `GET /api/session` automatisch eine Gerätesitzung an oder verwendet die vorhandene weiter. Eine vorherige Kennworteinrichtung ist auch vor der HTTPS-Freigabe nicht nötig. „Profil wechseln“ und „Zur Profilauswahl“ ändern die Auswahl auf diesem Gerät, ohne die Auswahl auf anderen Geräten zu ändern.

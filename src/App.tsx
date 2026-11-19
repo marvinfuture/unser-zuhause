@@ -472,7 +472,7 @@ function Modal({
 
 /**
  * Verwaltet Gerätesitzung, gemeinsame Daten, Hash-Navigation und globale Dialoge. Der Einstieg
- * erfolgt direkt über die Profilwahl; eine Generation schützt vor verspäteten Sitzungsantworten.
+ * erfolgt bei jedem Laden direkt über die Profilwahl; eine Generation schützt vor verspäteten Sitzungsantworten.
  */
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -482,6 +482,8 @@ export default function App() {
   const [route, setRoute] = useState(location.hash.replace(/^#\/?/, '') || 'overview');
   const [editor, setEditor] = useState<EditorSpec | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  // Eine gespeicherte Gerätesitzung überspringt die Namensauswahl beim erneuten Öffnen nicht.
+  const [hasChosenProfile, setHasChosenProfile] = useState(false);
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
   const [initialError, setInitialError] = useState('');
   const pendingRefresh = useRef<Promise<void> | null>(null);
@@ -527,13 +529,14 @@ export default function App() {
         try {
           const current = await api<Session>('/session', { signal: controller.signal });
           if (epoch !== sessionEpoch.current || controller.signal.aborted) return;
-          const nextState = current.profileId
+          const nextState = hasChosenProfile && current.profileId
             ? await api<AppState>('/state', { signal: controller.signal })
             : null;
           if (epoch !== sessionEpoch.current || controller.signal.aborted) return;
           setSession(current);
           setState(nextState);
           if (!current.profileId) {
+            setHasChosenProfile(false);
             setEditor(null);
             setProfileOpen(false);
           }
@@ -555,11 +558,12 @@ export default function App() {
       pendingRefresh.current = job;
       return job;
     },
-    [invalidateRefresh],
+    [hasChosenProfile, invalidateRefresh],
   );
   // Navigation, Rückkehr in den Tab und ein sparsamer Timer halten die Ansicht über Geräte hinweg aktuell.
   useEffect(() => {
-    void refresh(false);
+    // Nach der Auswahl hat chooseProfile die Haushaltsdaten bereits geladen.
+    if (!hasChosenProfile) void refresh(false);
     /** Übernimmt die Browser-Navigation aus dem Hash; eine leere Route führt zur Übersicht. */
     const onHash = () => setRoute(location.hash.replace(/^#\/?/, '') || 'overview');
     /**
@@ -593,7 +597,7 @@ export default function App() {
       window.removeEventListener('online', onFocus);
       document.removeEventListener('visibilitychange', onFocus);
     };
-  }, [refresh]);
+  }, [hasChosenProfile, refresh]);
   /**
    * Öffnet den passenden Datensatzeditor und merkt sich das aktuell ausgewählte Profil samt
    * Versionsnummer. Spätere Profilwechsel dürfen diesen Bearbeitungskontext nicht unbemerkt
@@ -658,6 +662,7 @@ export default function App() {
       const nextState = await api<AppState>('/state');
       if (epoch !== sessionEpoch.current) return;
       setState(nextState);
+      setHasChosenProfile(true);
       setOnline(true);
       setInitialError('');
     } catch (error) {
@@ -687,6 +692,7 @@ export default function App() {
     resetPending.current = previous;
     setSession(null);
     setState(null);
+    setHasChosenProfile(false);
     setEditor(null);
     setProfileOpen(false);
     setToast(null);
@@ -743,7 +749,8 @@ export default function App() {
         </div>
       </div>
     );
-  if (!session.profileId) return <ProfilePicker session={session} chooseProfile={chooseProfile} />;
+  if (!hasChosenProfile || !session.profileId)
+    return <ProfilePicker session={session} chooseProfile={chooseProfile} />;
   if (!state)
     return (
       <div className="loading-screen">
@@ -921,7 +928,7 @@ export default function App() {
 
 /**
  * Bietet den direkten Einstieg über Karla oder Marvin. Die Auswahl kennzeichnet Einträge und
- * bleibt auf diesem Gerät erhalten; sie ist kein persönlicher Zugriffsschutz.
+ * gilt für die laufende Nutzung; beim erneuten Laden wird sie bestätigt. Sie ist kein persönlicher Zugriffsschutz.
  */
 function ProfilePicker({
   session,
@@ -965,7 +972,13 @@ function ProfilePicker({
           >
             <span className={`avatar large ${profile.id}`}>{profile.name[0]}</span>
             <strong>{profile.name}</strong>
-            <span>{session.profileId === profile.id ? 'Gerade ausgewählt' : 'Das bin ich'}</span>
+            <span>
+              {session.profileId === profile.id
+                ? embedded
+                  ? 'Gerade ausgewählt'
+                  : 'Mit diesem Namen starten'
+                : 'Das bin ich'}
+            </span>
             {session.profileId === profile.id && <Check size={18} />}
           </button>
         ))}

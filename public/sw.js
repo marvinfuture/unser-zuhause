@@ -1,4 +1,5 @@
-const CACHE = "zuhause-shell-v1";
+const CACHE_PREFIX = "zuhause-shell-";
+const CACHE = `${CACHE_PREFIX}v2`;
 /** Installiert ausschließlich die unpersönliche Offline-Seite und das App-Symbol; Hausdaten und Fotos werden nicht vorab gespeichert. */
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -8,14 +9,16 @@ self.addEventListener("install", (event) => {
   );
   self.skipWaiting();
 });
-/** Entfernt ältere App-Caches und übernimmt anschließend die offenen Fenster für diese Service-Worker-Version. */
+/** Entfernt nur ältere Caches dieser App und übernimmt anschließend die offenen Fenster; andere Anwendungen am selben Ursprung bleiben unberührt. */
 self.addEventListener("activate", (event) =>
   event.waitUntil(
     caches
       .keys()
       .then((keys) =>
         Promise.all(
-          keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)),
+          keys
+            .filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE)
+            .map((k) => caches.delete(k)),
         ),
       )
       .then(() => self.clients.claim()),
@@ -27,11 +30,14 @@ self.addEventListener("fetch", (event) => {
   if (
     url.origin !== self.location.origin ||
     event.request.method !== "GET" ||
+    url.pathname === "/api" ||
     url.pathname.startsWith("/api/")
   )
     return;
   if (event.request.mode === "navigate")
     event.respondWith(
-      fetch(event.request).catch(() => caches.match("/offline.html")),
+      fetch(event.request, { cache: "no-store" }).catch(() =>
+        caches.open(CACHE).then((cache) => cache.match("/offline.html")),
+      ),
     );
 });
