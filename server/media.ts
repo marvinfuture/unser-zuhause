@@ -158,13 +158,18 @@ export function processImage(
  */
 export async function cleanupMedia(ctx: AppContext): Promise<void> {
   if (isBackupRunning(ctx.db.dataDir)) return;
-  const comparisons = ctx.db.list<Comparison>("comparisons");
   const cutoff = Date.now() - 30 * 86_400_000;
-  for (const photo of ctx.db.list<Photo>("photos")) {
+  for (const candidate of ctx.db.list<Photo>("photos")) {
+    // Nach jeder asynchronen Dateilöschung können Nutzer weitere Fotos inzwischen
+    // wiederhergestellt oder neu verknüpft haben; nur der aktuelle Stand zählt.
+    const photo = ctx.db.get<Photo>("photos", candidate.id);
     if (
+      !photo ||
       !photo.deletedAt ||
       new Date(photo.deletedAt).getTime() > cutoff ||
-      comparisons.some((c) => c.beforeId === photo.id || c.afterId === photo.id)
+      ctx.db
+        .list<Comparison>("comparisons")
+        .some((c) => c.beforeId === photo.id || c.afterId === photo.id)
     )
       continue;
     if (isBackupRunning(ctx.db.dataDir)) return;
@@ -292,12 +297,6 @@ export function registerMedia(
           "Auf dem PC ist zu wenig freier Speicher für ein weiteres Foto.",
           "STORAGE_FULL",
         );
-      if (mediaUsage(ctx) + MAX_FILE > (options.limitBytes ?? mediaLimit()))
-        throw new HttpError(
-          507,
-          "Der Fotospeicher ist voll. Bitte die Speichergrenze prüfen.",
-          "STORAGE_FULL",
-        );
       await receive(req, res);
       if (!req.file)
         throw new HttpError(400, "Bitte ein Foto auswählen.", "VALIDATION");
@@ -386,6 +385,14 @@ export function registerMedia(
         await clean();
         return res.json(existing.photo);
       }
+      // Bestätigte Wiederholungen benötigen keinen neuen Speicher. Für neue Bilder
+      // entscheidet nach der Verarbeitung ihre tatsächliche Größe samt Vorschauen.
+      if (mediaUsage(ctx) >= (options.limitBytes ?? mediaLimit()))
+        throw new HttpError(
+          507,
+          "Der Fotospeicher ist voll. Bitte die Speichergrenze prüfen.",
+          "STORAGE_FULL",
+        );
       const result = await processImage(staging[0], staging[1], staging[2]);
       assertProfile(req, req.body.profileVersion); // Nach der asynchronen Bildverarbeitung die Profilwahl erneut prüfen.
       const currentTarget = projectId
@@ -508,9 +515,15 @@ export function registerMedia(
           "Content-Disposition",
           `attachment; filename="foto-${photo.id}.${photo.mime === "image/jpeg" ? "jpg" : photo.mime.split("/")[1]}"`,
         );
-      res.sendFile(file, { cacheControl: false }, (err) => {
-        if (err) next(err);
-      });
+      // Der feste Medienroot erlaubt auch Datenordner wie .runtime/data, ohne
+      // versteckte Dateien innerhalb des Medienordners allgemein freizugeben.
+      res.sendFile(
+        relative(root, file),
+        { root, cacheControl: false },
+        (err) => {
+          if (err) next(err);
+        },
+      );
     } catch (error) {
       next(error);
     }

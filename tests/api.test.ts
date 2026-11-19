@@ -953,3 +953,376 @@ test("two devices validate fresh dependency state and preserve optimistic record
   assert.equal(explicitlyReopened.body.completedBy, null);
   assert.equal(explicitlyReopened.body.updatedBy, "marvin");
 });
+
+test("project moves resolve equal and adjacent floating-point ranks atomically without changing excluded projects", async (t) => {
+  const { ctx, client: karla, newClient } = await fixture(t);
+  const marvin = newClient();
+  await marvin.send("GET", "/api/session");
+  await marvin.choose("marvin");
+  const first = (
+    await karla.create("projects", { title: "Küche", status: "idea" })
+  ).body;
+  const second = (await karla.create("projects", { title: "Bad" })).body;
+  const third = (await karla.create("projects", { title: "Flur" })).body;
+  const underway = (
+    await karla.create("projects", {
+      title: "Schon in Arbeit",
+      status: "active",
+    })
+  ).body;
+  const archived = (await karla.create("projects", { title: "Archiviert" }))
+    .body;
+  const archivedRecord = (
+    await karla.patch("projects", archived, {
+      archivedAt: new Date().toISOString(),
+    })
+  ).body;
+  const originalOrder = [first.id, second.id, third.id];
+  const moved = await marvin.send("POST", `/api/projects/${third.id}/move`, {
+    direction: "up",
+    version: third.version,
+    profileVersion: marvin.profileVersion,
+    expectedOrder: originalOrder,
+  });
+  assert.equal(moved.status, 200);
+  assert.deepEqual(
+    moved.body.map((project: any) => project.id),
+    [first.id, third.id, second.id],
+  );
+  assert.deepEqual(
+    moved.body.map((project: any) => project.rank),
+    [1024, 2048, 3072],
+  );
+  for (const project of moved.body) {
+    assert.equal(project.createdBy, "karla");
+    assert.equal(project.updatedBy, "marvin");
+    assert.equal(project.version, 2);
+  }
+  assert.deepEqual(ctx.db.get("projects", underway.id), underway);
+  assert.deepEqual(ctx.db.get("projects", archived.id), archivedRecord);
+  const stale = await karla.send("POST", `/api/projects/${second.id}/move`, {
+    direction: "up",
+    version: second.version,
+    profileVersion: karla.profileVersion,
+    expectedOrder: originalOrder,
+  });
+  assert.equal(stale.status, 409);
+  assert.equal(stale.body.code, "VERSION_CONFLICT");
+  assert.equal(stale.body.record.version, 2);
+
+  // Drei aufeinanderfolgende darstellbare Zahlen lassen keinen weiteren Mittelwert dazwischen zu.
+  const compressed = [];
+  for (const [index, project] of moved.body.entries()) {
+    const patched = await marvin.patch("projects", project, {
+      rank: 1 + index * Number.EPSILON,
+    });
+    assert.equal(patched.status, 200);
+    compressed.push(patched.body);
+  }
+  const normalized = await marvin.send(
+    "POST",
+    `/api/projects/${compressed[2].id}/move`,
+    {
+      direction: "up",
+      version: compressed[2].version,
+      profileVersion: marvin.profileVersion,
+      expectedOrder: compressed.map((project) => project.id),
+    },
+  );
+  assert.equal(normalized.status, 200);
+  assert.deepEqual(
+    normalized.body.map((project: any) => project.id),
+    [first.id, second.id, third.id],
+  );
+  assert.deepEqual(
+    normalized.body.map((project: any) => project.rank),
+    [1024, 2048, 3072],
+  );
+  const boundary = await marvin.send(
+    "POST",
+    `/api/projects/${normalized.body[0].id}/move`,
+    {
+      direction: "up",
+      version: normalized.body[0].version,
+      profileVersion: marvin.profileVersion,
+      expectedOrder: originalOrder,
+    },
+  );
+  assert.equal(boundary.status, 200);
+  assert.deepEqual(boundary.body, normalized.body);
+
+  const tiedThird = (
+    await karla.patch("projects", normalized.body[2], {
+      rank: normalized.body[1].rank,
+    })
+  ).body;
+  const sameNumericRank = await marvin.send(
+    "POST",
+    `/api/projects/${tiedThird.id}/move`,
+    {
+      direction: "up",
+      version: tiedThird.version,
+      profileVersion: marvin.profileVersion,
+      expectedOrder: originalOrder,
+    },
+  );
+  assert.equal(sameNumericRank.status, 200);
+  const movedTarget = sameNumericRank.body.find(
+    (entry: any) => entry.id === tiedThird.id,
+  );
+  assert.equal(movedTarget.rank, tiedThird.rank);
+  assert.equal(movedTarget.version, tiedThird.version + 1);
+  assert.equal(movedTarget.updatedBy, "marvin");
+  assert.deepEqual(ctx.db.get("projects", tiedThird.id), movedTarget);
+});
+
+test("concurrent project moves, new projects and stale form versions cannot silently replace the shared order", async (t) => {
+  const { client, newClient } = await fixture(t);
+  const other = newClient();
+  await other.send("GET", "/api/session");
+  await other.choose("marvin");
+  const projects = [];
+  for (const title of [
+    "Erstes Vorhaben",
+    "Zweites Vorhaben",
+    "Drittes Vorhaben",
+  ])
+    projects.push((await client.create("projects", { title })).body);
+  const expectedOrder = projects.map((project) => project.id);
+  const results = await Promise.all([
+    client.send("POST", `/api/projects/${projects[0].id}/move`, {
+      direction: "down",
+      version: projects[0].version,
+      profileVersion: client.profileVersion,
+      expectedOrder,
+    }),
+    other.send("POST", `/api/projects/${projects[2].id}/move`, {
+      direction: "up",
+      version: projects[2].version,
+      profileVersion: other.profileVersion,
+      expectedOrder,
+    }),
+  ]);
+  assert.deepEqual(results.map((result) => result.status).sort(), [200, 409]);
+  assert.equal(
+    results.find((result) => result.status === 409)!.body.code,
+    "VERSION_CONFLICT",
+  );
+  const latest = results.find((result) => result.status === 200)!.body;
+  assert.equal(
+    (
+      await client.patch("projects", projects[0], {
+        title: "Alter Formularstand",
+      })
+    ).body.code,
+    "VERSION_CONFLICT",
+  );
+  await other.create("projects", { title: "Zwischenzeitlich ergänzt" });
+  const changedMembership = await client.send(
+    "POST",
+    `/api/projects/${latest[0].id}/move`,
+    {
+      direction: "down",
+      version: latest[0].version,
+      profileVersion: client.profileVersion,
+      expectedOrder: latest.map((project: any) => project.id),
+    },
+  );
+  assert.equal(changedMembership.body.code, "VERSION_CONFLICT");
+  assert.equal(
+    (await client.send("GET", "/api/state")).body.projects.length,
+    4,
+  );
+  assert.equal(
+    (
+      await client.send(
+        "POST",
+        `/api/projects/${latest[0].id}/move`,
+        {
+          direction: "down",
+          version: latest[0].version,
+          profileVersion: client.profileVersion,
+          expectedOrder: latest.map((project: any) => project.id),
+        },
+        { csrf: false },
+      )
+    ).body.code,
+    "CSRF",
+  );
+  assert.equal(
+    (
+      await client.send("POST", `/api/projects/${latest[0].id}/move`, {
+        direction: "down",
+        version: latest[0].version,
+        profileVersion: client.profileVersion - 1,
+        expectedOrder: latest.map((project: any) => project.id),
+      })
+    ).body.code,
+    "PROFILE_CHANGED",
+  );
+});
+
+test("project room changes protect live and archived references and provide a workable resolution", async (t) => {
+  const { client } = await fixture(t);
+  const oldRoom = (await client.create("rooms", { title: "Alter Raum" })).body;
+  const newRoom = (await client.create("rooms", { title: "Neuer Raum" })).body;
+  let project = (
+    await client.create("projects", { title: "Vorhaben", roomId: oldRoom.id })
+  ).body;
+  let task = (
+    await client.create("tasks", {
+      title: "Vorbereitung",
+      roomId: oldRoom.id,
+      projectId: project.id,
+    })
+  ).body;
+  let defect = (
+    await client.create("defects", {
+      title: "Alter Befund",
+      roomId: oldRoom.id,
+      projectId: project.id,
+    })
+  ).body;
+  defect = (
+    await client.patch("defects", defect, {
+      archivedAt: new Date().toISOString(),
+    })
+  ).body;
+  const rejected = await client.patch("projects", project, {
+    roomId: newRoom.id,
+  });
+  assert.equal(rejected.status, 409);
+  assert.equal(rejected.body.code, "PROJECT_ROOM_CONFLICT");
+  assert.match(rejected.body.message, /Vorbereitung/);
+  assert.match(rejected.body.message, /Alter Befund.*archiviert/);
+  assert.match(rejected.body.message, /Allgemein im Haus/);
+  const completed = await client.patch("tasks", task, { status: "done" });
+  assert.equal(
+    completed.status,
+    200,
+    "Der abgelehnte Raumwechsel darf die Aufgabe nicht beschädigen.",
+  );
+  task = completed.body;
+  project = (await client.patch("projects", project, { roomId: null })).body;
+  assert.equal(
+    (await client.patch("projects", project, { roomId: newRoom.id })).body.code,
+    "PROJECT_ROOM_CONFLICT",
+  );
+  task = (await client.patch("tasks", task, { roomId: null })).body;
+  defect = (await client.patch("defects", defect, { roomId: null })).body;
+  const moved = await client.patch("projects", project, { roomId: newRoom.id });
+  assert.equal(moved.status, 200);
+  assert.equal(task.projectId, project.id);
+  assert.equal(defect.projectId, project.id);
+  const restored = await client.patch("defects", defect, {
+    archivedAt: null,
+    roomId: newRoom.id,
+  });
+  assert.equal(restored.status, 200);
+  assert.equal(restored.body.projectId, project.id);
+  assert.equal(restored.body.status, "open");
+});
+
+test("room and project archives preserve household tasks, purchases, defects and manual notes", async (t) => {
+  const { client: karla, newClient } = await fixture(t);
+  const marvin = newClient();
+  await marvin.send("GET", "/api/session");
+  await marvin.choose("marvin");
+  const room = (await karla.create("rooms", { title: "Werkstatt" })).body;
+  let project = (
+    await karla.create("projects", {
+      title: "Werkstatt ordnen",
+      roomId: room.id,
+    })
+  ).body;
+  const defect = (
+    await karla.create("defects", {
+      title: "Lockeres Regal",
+      roomId: room.id,
+      projectId: project.id,
+      assignees: ["karla", "marvin"],
+    })
+  ).body;
+  const task = (
+    await karla.create("tasks", {
+      title: "Regal befestigen",
+      roomId: room.id,
+      projectId: project.id,
+      defectId: defect.id,
+    })
+  ).body;
+  const householdTask = (
+    await marvin.create("tasks", { title: "Allgemeine Hausarbeit" })
+  ).body;
+  const purchase = (
+    await karla.create("shopping", {
+      title: "Dübel",
+      projectId: project.id,
+      quantity: 4,
+      unit: "Stück",
+      unitPriceCents: 25,
+    })
+  ).body;
+  let note = (
+    await karla.create("notes", {
+      projectId: project.id,
+      body: "Passende Dübel prüfen",
+    })
+  ).body;
+  note = (
+    await marvin.patch("notes", note, {
+      body: "Dübel für die vorhandene Wand auswählen",
+    })
+  ).body;
+  const completed = (await marvin.patch("tasks", task, { status: "done" }))
+    .body;
+  const bought = (await marvin.patch("shopping", purchase, { purchased: true }))
+    .body;
+  assert.equal(completed.completedBy, "marvin");
+  assert.equal(completed.createdBy, "karla");
+  assert.equal(bought.purchasedBy, "marvin");
+  assert.equal(note.createdBy, "karla");
+  assert.equal(note.updatedBy, "marvin");
+  const archivedRoom = (
+    await karla.patch("rooms", room, { archivedAt: new Date().toISOString() })
+  ).body;
+  project = (
+    await karla.patch("projects", project, {
+      archivedAt: new Date().toISOString(),
+    })
+  ).body;
+  const state = (await marvin.send("GET", "/api/state")).body;
+  assert.equal(state.tasks.length, 2);
+  assert.equal(
+    state.tasks.find((entry: any) => entry.id === householdTask.id).projectId,
+    null,
+  );
+  assert.equal(
+    state.tasks.find((entry: any) => entry.id === task.id).archivedAt,
+    null,
+  );
+  assert.equal(
+    state.defects.find((entry: any) => entry.id === defect.id).status,
+    "open",
+    "Die erledigte Herkunftsaufgabe behebt den Mangel nicht automatisch.",
+  );
+  assert.equal(
+    state.shopping.find((entry: any) => entry.id === purchase.id).purchasedBy,
+    "marvin",
+  );
+  assert.equal(
+    state.notes.find((entry: any) => entry.id === note.id).body,
+    note.body,
+  );
+  const restoredRoom = await marvin.patch("rooms", archivedRoom, {
+    archivedAt: null,
+  });
+  const restoredProject = await marvin.patch("projects", project, {
+    archivedAt: null,
+  });
+  assert.equal(restoredRoom.status, 200);
+  assert.equal(restoredProject.status, 200);
+  assert.equal(restoredProject.body.roomId, room.id);
+  assert.equal(restoredProject.body.createdBy, "karla");
+  assert.equal(restoredProject.body.updatedBy, "marvin");
+});

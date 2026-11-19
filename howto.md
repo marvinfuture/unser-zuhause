@@ -79,6 +79,8 @@ HTTPS kann ohne vorherige Kennworteinrichtung eingerichtet werden. `localhost` a
 
 ### Projekte und Aufgaben planen
 
+Unter **Projekte → Als Nächstes** könnt ihr mit den Pfeilen festlegen, welche Renovierung zuerst ansteht. Wählt dazu **Eure Reihenfolge**. Mit **Nach Priorität** oder **Nach Wunschtermin** könnt ihr dieselben Projekte anders ansehen. Die gespeicherte Reihenfolge bleibt dabei erhalten.
+
 Ein Projekt öffnen und den Reiter **Planung** wählen. Dort stehen **Liste**, **Board** und **Zeitachse** zur Verfügung. Die Liste eignet sich zum Bearbeiten einzelner Aufgaben, das Board für den Überblick und die Zeitachse für die eingetragenen Termine. Über **Aufgabe anlegen** oder das Bearbeiten einer vorhandenen Aufgabe die Phase **Planung, Vorbereitung, Renovierung oder Abschluss** auswählen.
 
 Für eine Aufgabenfolge legt ihr bei einer Aufgabe ihre Vorgänger aus demselben Projekt fest. Eine Aufgabe kann mehrere Vorgänger haben. Sie lässt sich erst auf **In Arbeit** oder **Erledigt** setzen, wenn alle ausgewählten Vorgänger erledigt sind. Beispiel: „Wand streichen“ wartet auf „Tapete entfernen“ und „Löcher verspachteln“.
@@ -86,6 +88,10 @@ Für eine Aufgabenfolge legt ihr bei einer Aufgabe ihre Vorgänger aus demselben
 Karla, Marvin oder beide könnt ihr schon vorher zuweisen. Auch die Termine plant ihr selbst: Abhängigkeiten verschieben keine Daten und erstellen keinen automatischen Zeitplan.
 
 In der Aufgabenübersicht hilft der Filter **Startbereit**, die nächsten möglichen Arbeiten zu finden. Im Board zeigen **Starten**, **Erledigen** und **Sperre aufheben** die passende nächste Aktion. Eine manuell blockierte Aufgabe bleibt gesperrt, auch wenn ihre Vorgänger inzwischen fertig sind. Aufgaben ohne Termin stehen unterhalb der Zeitachse separat.
+
+Unter **Haus → Mängel** einen Mangel öffnen und **Aufgabe daraus machen** wählen. Die Aufgabe übernimmt unter anderem Raum, Zuständigkeit und Fälligkeit. Der Link im Aufgabenformular führt zurück zum ursprünglichen Mangel. Sobald der Schaden behoben ist, wählt in seinen Details **Als behoben markieren**.
+
+Wenn ihr gleichzeitig denselben Eintrag bearbeitet, zeigt die App beim Speichern den anderen Stand. Nach **Geprüft · Meine Eingaben weiterbearbeiten** stehen eure eigenen Eingaben weiterhin im Formular. Felder, die ihr unverändert gelassen habt, zeigen jetzt die Änderungen vom anderen Gerät. Anschließend **Speichern** wählen.
 
 Wenn ihr die Vorgänger einer bereits laufenden oder erledigten Aufgabe ändern möchtet, setzt diese Aufgabe im selben Formular wieder auf **Offen**. Einen erledigten Vorgänger könnt ihr erst wieder öffnen, wenn bereits laufende oder erledigte Nachfolger wieder offen sind oder die Verknüpfung bewusst entfernt wurde. Die App nennt betroffene Aufgaben in der Fehlermeldung.
 

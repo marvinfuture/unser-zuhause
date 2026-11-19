@@ -79,6 +79,7 @@ import {
   uploadPhoto,
   type AuthorContext,
 } from './api';
+import { mergeEditorConflict, recordFormValues } from './editor-values';
 
 type AnyRecord = BaseRecord & Record<string, any>;
 type EditorSpec = {
@@ -115,9 +116,40 @@ const collectionLabels: Record<Collection, string> = {
   notes: 'Notiz',
   comparisons: 'Fotovergleich',
 };
+const editorFieldLabels: Record<string, string> = {
+  title: 'Titel',
+  description: 'Beschreibung',
+  status: 'Status',
+  priority: 'Priorität',
+  roomId: 'Raum',
+  projectId: 'Projekt',
+  defectId: 'Ursprünglicher Mangel',
+  phase: 'Projektphase',
+  predecessorIds: 'Vorgänger',
+  assignees: 'Zuständigkeit',
+  startDate: 'Beginn',
+  dueDate: 'Fälligkeit',
+  category: 'Kategorie',
+  quantity: 'Menge',
+  unit: 'Einheit',
+  unitPriceCents: 'Einzelpreis',
+  purchased: 'Gekauft',
+  body: 'Notiz',
+  color: 'Farbe',
+  icon: 'Symbol',
+  archivedAt: 'Archiviert am',
+  beforeId: 'Vorher-Foto',
+  afterId: 'Nachher-Foto',
+  beforeX: 'Vorher · Horizontal',
+  beforeY: 'Vorher · Vertikal',
+  afterX: 'Nachher · Horizontal',
+  afterY: 'Nachher · Vertikal',
+  beforeZoom: 'Vorher · Vergrößerung',
+  afterZoom: 'Nachher · Vergrößerung',
+};
 /**
  * Formatiert einen Zeitstempel oder ein reines Tagesdatum mit Jahr für die deutsche Anzeige.
- * Tagesdaten erhalten eine lokale Mittagszeit; die Ausgabe verwendet Europe/Berlin.
+ * Tagesdaten erhalten eine UTC-Mittagszeit, damit die Gerätezeitzone den Berliner Kalendertag nicht verschiebt.
  */
 const fullDate = (value: string) =>
   new Intl.DateTimeFormat('de-DE', {
@@ -125,17 +157,17 @@ const fullDate = (value: string) =>
     month: 'short',
     year: 'numeric',
     timeZone: 'Europe/Berlin',
-  }).format(new Date(value.length === 10 ? `${value}T12:00:00` : value));
+  }).format(new Date(value.length === 10 ? `${value}T12:00:00Z` : value));
 /**
  * Erzeugt die kurze deutsche Tagesanzeige für Fälligkeiten. Reine Datumswerte werden zur Anzeige um
- * eine Mittagszeit ergänzt.
+ * eine UTC-Mittagszeit ergänzt, unabhängig von der Gerätezeitzone.
  */
 const shortDate = (value: string) =>
   new Intl.DateTimeFormat('de-DE', {
     day: 'numeric',
     month: 'short',
     timeZone: 'Europe/Berlin',
-  }).format(new Date(`${value}T12:00:00`));
+  }).format(new Date(`${value}T12:00:00Z`));
 /** Wandelt den intern ganzzahligen Centbetrag in eine deutsche Euro-Anzeige um. */
 const money = (cents: number) =>
   new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(cents / 100);
@@ -150,6 +182,68 @@ const bytes = (value: number) =>
  */
 const name = (profile: ProfileId | null | undefined) =>
   profile === 'karla' ? 'Karla' : profile === 'marvin' ? 'Marvin' : 'Noch offen';
+
+/** Zeigt fremde Änderungen mit denselben Namen, Titeln und Einheiten wie im Eingabeformular. */
+function conflictValue(
+  collection: Collection,
+  field: string,
+  record: AnyRecord,
+  state: AppState,
+): string {
+  const value = record[field];
+  if (value == null || value === '') return 'Keine Angabe';
+  switch (field) {
+    case 'assignees':
+      return (value as ProfileId[]).map(name).join(', ') || 'Noch offen';
+    case 'predecessorIds':
+      return (
+        (value as string[])
+          .map((id) => state.tasks.find((task) => task.id === id)?.title || 'Unbekannte Aufgabe')
+          .join(', ') || 'Keine'
+      );
+    case 'projectId':
+      return state.projects.find((project) => project.id === value)?.title || 'Unbekanntes Projekt';
+    case 'roomId':
+      return state.rooms.find((room) => room.id === value)?.title || 'Unbekannter Raum';
+    case 'defectId':
+      return state.defects.find((defect) => defect.id === value)?.title || 'Unbekannter Mangel';
+    case 'beforeId':
+    case 'afterId': {
+      const photo = state.photos.find((photo) => photo.id === value);
+      return photo ? photo.title || categoryLabels[photo.category] : 'Unbekanntes Foto';
+    }
+    case 'status':
+      if (collection === 'projects') return projectStatus[value as Project['status']];
+      if (collection === 'defects') return defectStatus[value as Defect['status']];
+      return taskStatus[value as Task['status']];
+    case 'priority':
+      return priorityLabels[value as Priority];
+    case 'phase':
+      return taskPhaseLabels[value as Task['phase']];
+    case 'category':
+      return value === 'tool' ? 'Werkzeug' : 'Material';
+    case 'startDate':
+    case 'dueDate':
+    case 'archivedAt':
+      return fullDate(value);
+    case 'purchased':
+      return value ? 'Ja' : 'Nein';
+    case 'unitPriceCents':
+      return money(value);
+    case 'beforeZoom':
+    case 'afterZoom':
+      return `${Number(value).toLocaleString('de-DE')}×`;
+    case 'beforeX':
+    case 'beforeY':
+    case 'afterX':
+    case 'afterY':
+      return `${value} %`;
+    case 'quantity':
+      return Number(value).toLocaleString('de-DE');
+    default:
+      return String(value);
+  }
+}
 /**
  * Liefert nur nicht archivierte Datensätze, ohne die ursprüngliche Liste zu verändern. Der
  * Foto-Papierkorb wird zusätzlich in der Galerie behandelt.
@@ -180,7 +274,14 @@ function waitingFor(task: Pick<Task, 'predecessorIds'>, tasks: Task[]) {
 
 /** Eine offene Aufgabe ist erst startbereit, wenn alle Vorgänger erledigt sind und keine manuelle Sperre besteht. */
 function isReady(task: Task, tasks: Task[]) {
-  return task.status === 'open' && waitingFor(task, tasks).length === 0;
+  return !task.archivedAt && task.status === 'open' && waitingFor(task, tasks).length === 0;
+}
+
+/** Liefert den Sonntag zur übergebenen Berliner Kalenderwoche, ohne die Gerätezeitzone einzubeziehen. */
+function endOfWeek(today: string) {
+  const date = new Date(`${today}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + ((7 - date.getUTCDay()) % 7));
+  return date.toISOString().slice(0, 10);
 }
 
 /** Ordnet Aufgaben dem Board zu; Abhängigkeiten und manuelle Sperren haben Vorrang vor offenen Arbeiten. */
@@ -397,7 +498,7 @@ function Progress({ projectId }: { projectId: string }) {
       <div>
         <span>
           {value === null
-            ? 'Noch keine Aufgaben'
+            ? 'Noch keine Aufgaben geplant'
             : `${total.filter((t) => t.status === 'done').length} von ${total.length} Aufgaben`}
         </span>
         <strong>{value === null ? '—' : `${value} %`}</strong>
@@ -872,7 +973,7 @@ export default function App() {
             ) : section === 'shopping' ? (
               <ShoppingView />
             ) : section === 'house' ? (
-              <HouseView />
+              <HouseView route={route} />
             ) : section === 'settings' ? (
               <SettingsView resetProfile={resetProfile} openProfiles={() => setProfileOpen(true)} />
             ) : (
@@ -1058,6 +1159,10 @@ function Dashboard() {
     )
     .slice(0, 4);
   const unfinished = active(state.defects).filter((d) => d.status !== 'resolved');
+  const importantDefects = [...unfinished]
+    .sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority])
+    .slice(0, 3);
+  const needed = active(state.shopping).filter((item) => !item.purchased);
   return (
     <>
       <PageTitle
@@ -1117,7 +1222,7 @@ function Dashboard() {
         />
         <Stat
           icon={<ShoppingBasket />}
-          value={active(state.shopping).filter((s) => !s.purchased).length}
+          value={needed.length}
           label="Auf der Einkaufsliste"
           tone="rose"
           onClick={() => go('shopping')}
@@ -1127,7 +1232,7 @@ function Dashboard() {
           value={unfinished.length}
           label="Mängel im Blick"
           tone="lavender"
-          onClick={() => go('house')}
+          onClick={() => go('house/defects')}
         />
       </div>
       <div className="dashboard-columns">
@@ -1250,6 +1355,54 @@ function Dashboard() {
               <ArrowRight size={16} />
             </button>
           )}
+          {needed.length > 0 && (
+            <section aria-label="Offene Einkaufspositionen">
+              <div className="section-title next-heading">
+                <h2>Was noch fehlt</h2>
+              </div>
+              <div className="panel next-list">
+                {needed.slice(0, 3).map((item) => (
+                  <button className="next-item" key={item.id} onClick={() => go('shopping')}>
+                    <ShoppingBasket size={18} />
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>
+                        {item.quantity} {item.unit}
+                      </small>
+                    </span>
+                    <ChevronRight size={17} />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          {importantDefects.length > 0 && (
+            <section aria-label="Wichtige Mängel">
+              <div className="section-title next-heading">
+                <h2>Wichtige Mängel</h2>
+              </div>
+              <div className="panel next-list">
+                {importantDefects.map((defect) => (
+                  <button
+                    className="next-item"
+                    key={defect.id}
+                    onClick={() => go(`house/defects/${defect.id}`)}
+                  >
+                    <Wrench size={18} />
+                    <span>
+                      <strong>{defect.title}</strong>
+                      <small>
+                        {state.rooms.find((room) => room.id === defect.roomId)?.title ||
+                          'Unser Haus'}
+                      </small>
+                    </span>
+                    <PriorityBadge value={defect.priority} />
+                    <ChevronRight size={17} />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
         </section>
       </div>
     </>
@@ -1359,10 +1512,15 @@ function ProjectCard({ project }: { project: Project }) {
  * gespeicherte gemeinsame Planreihenfolge.
  */
 function Projects() {
-  const { state, edit, mutate } = useApp();
+  const { state, session, edit, refresh, notify } = useApp();
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [archived, setArchived] = useState(false);
+  const [sort, setSort] = useState('rank');
+  const [moving, setMoving] = useState(false);
+  const planned = active(state.projects)
+    .filter((project) => ['idea', 'planned'].includes(project.status))
+    .sort((a, b) => a.rank - b.rank);
   const items = state.projects
     .filter(
       (p) =>
@@ -1372,28 +1530,41 @@ function Projects() {
           p.status === filter) &&
         p.title.toLocaleLowerCase('de').includes(search.toLocaleLowerCase('de')),
     )
-    .sort((a, b) => a.rank - b.rank);
+    .sort(
+      (a, b) =>
+        (sort === 'priority'
+          ? priorityOrder[a.priority] - priorityOrder[b.priority]
+          : sort === 'date'
+            ? (a.dueDate || '9999').localeCompare(b.dueDate || '9999')
+            : 0) || a.rank - b.rank,
+    );
   /**
-   * Verschiebt ein geplantes Projekt um eine Position, indem es einen Rang zwischen benachbarten
-   * Rängen erhält. Nur der betroffene Datensatz wird mit Versionsprüfung geändert.
+   * Verschiebt in der vollständigen Planreihenfolge. Der Server prüft die gesehene Reihenfolge und
+   * normalisiert Ränge atomar; Such- und Anzeigefilter verändern diese gemeinsame Reihenfolge nicht.
    */
   async function move(project: Project, direction: -1 | 1) {
-    const list = active(state.projects)
-      .filter((p) => ['idea', 'planned'].includes(p.status))
-      .sort((a, b) => a.rank - b.rank);
-    const i = list.findIndex((p) => p.id === project.id);
-    const other = list[i + direction];
-    if (!other) return;
-    const target = i + direction;
-    const rank =
-      direction === -1
-        ? list[target - 1]
-          ? (list[target - 1].rank + other.rank) / 2
-          : other.rank / 2
-        : list[target + 1]
-          ? (other.rank + list[target + 1].rank) / 2
-          : other.rank + 1024;
-    await mutate('projects', project, { rank });
+    if (moving || sort !== 'rank') return;
+    const index = planned.findIndex((entry) => entry.id === project.id);
+    if (!planned[index + direction]) return;
+    setMoving(true);
+    try {
+      await api(`/projects/${project.id}/move`, {
+        method: 'POST',
+        session,
+        body: {
+          direction: direction === -1 ? 'up' : 'down',
+          version: project.version,
+          profileVersion: session.profileVersion,
+          expectedOrder: planned.map((entry) => entry.id),
+        },
+      });
+      await refresh();
+    } catch (error) {
+      notify(errorText(error), true);
+      if (error instanceof ApiError && error.status === 409) await refresh();
+    } finally {
+      setMoving(false);
+    }
   }
   return (
     <>
@@ -1426,16 +1597,36 @@ function Projects() {
           ))}
         </div>
         <div className="toolbar-right">
+          <label>
+            <span className="sr-only">Projekte sortieren</span>
+            <select value={sort} onChange={(event) => setSort(event.target.value)}>
+              <option value="rank">Eure Reihenfolge</option>
+              <option value="priority">Nach Priorität</option>
+              <option value="date">Nach Wunschtermin</option>
+            </select>
+          </label>
           <SearchBox value={search} change={setSearch} placeholder="Projekt finden" />
           <ArchiveToggle value={archived} change={setArchived} />
         </div>
       </div>
+      {filter === 'planned' && !archived && (sort !== 'rank' || search) && (
+        <p className="tiny-note">
+          {sort !== 'rank'
+            ? 'Diese Sortierung ändert eure gespeicherte Reihenfolge nicht. Wählt „Eure Reihenfolge“, um Projekte zu verschieben.'
+            : 'Die Nummer und die Pfeile beziehen sich auf eure gesamte Reihenfolge, auch auf ausgeblendete Suchergebnisse.'}
+        </p>
+      )}
       {items.length ? (
         filter === 'planned' && !archived ? (
           <div className="panel planning-list">
-            {items.map((project, i) => (
+            {items.map((project) => (
               <div className="planning-item" key={project.id}>
-                <span className="next-number">{String(i + 1).padStart(2, '0')}</span>
+                <span className="next-number">
+                  {String(planned.findIndex((entry) => entry.id === project.id) + 1).padStart(
+                    2,
+                    '0',
+                  )}
+                </span>
                 <button className="planning-title" onClick={() => go(`projects/${project.id}`)}>
                   <strong>{project.title}</strong>
                   <small>
@@ -1448,7 +1639,7 @@ function Projects() {
                   <button
                     className="icon-button"
                     aria-label={`${project.title} nach oben`}
-                    disabled={i === 0}
+                    disabled={moving || sort !== 'rank' || planned[0]?.id === project.id}
                     onClick={() => void move(project, -1)}
                   >
                     <ArrowUp size={17} />
@@ -1456,7 +1647,7 @@ function Projects() {
                   <button
                     className="icon-button"
                     aria-label={`${project.title} nach unten`}
-                    disabled={i === items.length - 1}
+                    disabled={moving || sort !== 'rank' || planned.at(-1)?.id === project.id}
                     onClick={() => void move(project, 1)}
                   >
                     <ArrowDown size={17} />
@@ -1542,7 +1733,8 @@ function ArchiveToggle({ value, change }: { value: boolean; change: (value: bool
 function TaskRow({ task, compact = false }: { task: Task; compact?: boolean }) {
   const { state, edit, mutate } = useApp();
   const [busy, setBusy] = useState(false);
-  const late = task.status !== 'done' && task.dueDate && task.dueDate < localDay();
+  const late =
+    !task.archivedAt && task.status !== 'done' && task.dueDate && task.dueDate < localDay();
   const project = state.projects.find((p) => p.id === task.projectId);
   const predecessors = waitingFor(task, state.tasks);
   const blocked = task.status !== 'done' && (task.status === 'blocked' || predecessors.length > 0);
@@ -1551,7 +1743,7 @@ function TaskRow({ task, compact = false }: { task: Task; compact?: boolean }) {
    * Datenstand ändert sich erst nach Bestätigung des Servers.
    */
   async function toggle() {
-    if (blocked) return;
+    if (busy || task.archivedAt || blocked) return;
     setBusy(true);
     await mutate('tasks', task, { status: task.status === 'done' ? 'open' : 'done' });
     setBusy(false);
@@ -1633,6 +1825,16 @@ function TasksView({ projectId, embedded = false }: { projectId?: string; embedd
   const [search, setSearch] = useState('');
   const [archived, setArchived] = useState(false);
   const [projectFilter, setProjectFilter] = useState('all');
+  const [dueFilter, setDueFilter] = useState('all');
+  const today = localDay();
+  /** Übernimmt den Projektfilter beim Anlegen und ergänzt den dazugehörigen Raum als Startwert. */
+  function addTask() {
+    const selectedProject = projectId || (projectFilter === 'all' ? undefined : projectFilter);
+    edit('tasks', undefined, {
+      projectId: selectedProject,
+      roomId: state.projects.find((project) => project.id === selectedProject)?.roomId,
+    });
+  }
   const items = state.tasks
     .filter(
       (t) =>
@@ -1643,8 +1845,19 @@ function TasksView({ projectId, embedded = false }: { projectId?: string; embedd
           (status === 'open' && t.status !== 'done') ||
           (status === 'ready' && isReady(t, state.tasks)) ||
           (status === 'waiting' && boardColumn(t, state.tasks) === 'waiting') ||
-          (status === 'overdue' && t.status !== 'done' && !!t.dueDate && t.dueDate < localDay()) ||
           t.status === status) &&
+        (dueFilter === 'all' ||
+          (dueFilter === 'today' && t.dueDate === today) ||
+          (dueFilter === 'week' &&
+            !!t.dueDate &&
+            t.dueDate >= today &&
+            t.dueDate <= endOfWeek(today)) ||
+          (dueFilter === 'undated' && !t.dueDate) ||
+          (dueFilter === 'overdue' &&
+            !t.archivedAt &&
+            t.status !== 'done' &&
+            !!t.dueDate &&
+            t.dueDate < today)) &&
         (person === 'all' ||
           (person === 'mine' && t.assignees.includes(session.profileId!)) ||
           (person === 'both' && t.assignees.length === 2)) &&
@@ -1665,10 +1878,7 @@ function TasksView({ projectId, embedded = false }: { projectId?: string; embedd
           title="Eure Aufgaben"
           description="Was steht an, wer übernimmt es und was hat Vorrang?"
           action={
-            <button
-              className="button primary"
-              onClick={() => edit('tasks', undefined, { projectId })}
-            >
+            <button className="button primary" onClick={addTask}>
               <Plus size={18} />
               Aufgabe anlegen
             </button>
@@ -1692,10 +1902,7 @@ function TasksView({ projectId, embedded = false }: { projectId?: string; embedd
           ))}
         </div>
         {embedded ? (
-          <button
-            className="button primary"
-            onClick={() => edit('tasks', undefined, { projectId })}
-          >
+          <button className="button primary" onClick={addTask}>
             <Plus size={16} />
             Aufgabe
           </button>
@@ -1704,6 +1911,16 @@ function TasksView({ projectId, embedded = false }: { projectId?: string; embedd
         )}
       </div>
       <div className="filter-bar">
+        <label>
+          <span className="sr-only">Fälligkeit</span>
+          <select value={dueFilter} onChange={(event) => setDueFilter(event.target.value)}>
+            <option value="all">Jeder Termin</option>
+            <option value="today">Heute fällig</option>
+            <option value="week">Ab heute diese Woche</option>
+            <option value="overdue">Überfällig</option>
+            <option value="undated">Ohne Fälligkeit</option>
+          </select>
+        </label>
         <label>
           <span className="sr-only">Aufgabenstatus</span>
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -1714,7 +1931,6 @@ function TasksView({ projectId, embedded = false }: { projectId?: string; embedd
             <option value="active">In Arbeit</option>
             <option value="blocked">Blockiert</option>
             <option value="done">Erledigt</option>
-            <option value="overdue">Überfällig</option>
           </select>
         </label>
         <label>
@@ -1754,7 +1970,7 @@ function TasksView({ projectId, embedded = false }: { projectId?: string; embedd
             icon={<ListTodo />}
             title="Hier ist alles übersichtlich"
             action="Aufgabe anlegen"
-            onAction={() => edit('tasks', undefined, { projectId })}
+            onAction={addTask}
           >
             Für diese Auswahl gibt es noch keine Aufgaben. Haltet den nächsten kleinen Schritt fest.
           </Empty>
@@ -1781,6 +1997,12 @@ function ShoppingView({ projectId, embedded = false }: { projectId?: string; emb
   );
   const pending = items.filter((i) => !i.purchased);
   const bought = items.filter((i) => i.purchased);
+  /** Übernimmt das angezeigte Projekt beim Eintragen von Material oder Werkzeug. */
+  function addItem() {
+    edit('shopping', undefined, {
+      projectId: projectId ?? (projectFilter === 'all' ? null : projectFilter),
+    });
+  }
   /**
    * Rendert eine Einkaufsposition mit Menge, Einheit, freiwilligem Einzelpreis und
    * Personenkennzeichnung. Abhaken sendet eine versionsgeprüfte Änderung; der Titel öffnet den
@@ -1830,10 +2052,7 @@ function ShoppingView({ projectId, embedded = false }: { projectId?: string; emb
           title="Die Einkaufsliste"
           description="Alles, was ihr für eure nächsten Schritte braucht."
           action={
-            <button
-              className="button primary"
-              onClick={() => edit('shopping', undefined, { projectId })}
-            >
+            <button className="button primary" onClick={addItem}>
               <Plus size={18} />
               Etwas hinzufügen
             </button>
@@ -1872,10 +2091,7 @@ function ShoppingView({ projectId, embedded = false }: { projectId?: string; emb
           <ArchiveToggle value={archived} change={setArchived} />
         </div>
         {embedded && (
-          <button
-            className="button primary"
-            onClick={() => edit('shopping', undefined, { projectId })}
-          >
+          <button className="button primary" onClick={addItem}>
             <Plus size={17} />
             Hinzufügen
           </button>
@@ -1893,7 +2109,7 @@ function ShoppingView({ projectId, embedded = false }: { projectId?: string; emb
             icon={<ShoppingBasket />}
             title="Alles da oder noch nichts geplant?"
             action="Etwas hinzufügen"
-            onAction={() => edit('shopping', undefined, { projectId })}
+            onAction={addItem}
           >
             Farbe, Schrauben oder das richtige Werkzeug: Schreibt es auf, damit nichts vergessen
             wird.
@@ -1923,12 +2139,12 @@ function ShoppingView({ projectId, embedded = false }: { projectId?: string; emb
  * Verbindet Räume und Hausmängel in einer Ansicht. Ein Mangel kann ohne Projekt bestehen, Fotos
  * erhalten und als Ausgangspunkt für eine verknüpfte Aufgabe dienen.
  */
-function HouseView() {
+function HouseView({ route }: { route: string }) {
   const { state, edit, mutate } = useApp();
-  const [tab, setTab] = useState('rooms');
+  const [, area, defectId] = route.split('/');
+  const tab = area === 'defects' ? 'defects' : 'rooms';
   const [archived, setArchived] = useState(false);
   const [status, setStatus] = useState('open');
-  const [selectedDefect, setSelectedDefect] = useState<string | null>(null);
   const rooms = state.rooms.filter((r) => !!r.archivedAt === archived);
   const defects = state.defects
     .filter(
@@ -1939,7 +2155,7 @@ function HouseView() {
           : d.status === 'resolved'),
     )
     .sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
-  const selected = state.defects.find((d) => d.id === selectedDefect);
+  const selected = tab === 'defects' ? state.defects.find((d) => d.id === defectId) : undefined;
   return (
     <>
       <PageTitle
@@ -1958,11 +2174,14 @@ function HouseView() {
       />
       <div className="toolbar">
         <div className="segmented">
-          <button className={tab === 'rooms' ? 'selected' : ''} onClick={() => setTab('rooms')}>
+          <button className={tab === 'rooms' ? 'selected' : ''} onClick={() => go('house')}>
             <DoorOpen size={17} />
             Räume & Bereiche
           </button>
-          <button className={tab === 'defects' ? 'selected' : ''} onClick={() => setTab('defects')}>
+          <button
+            className={tab === 'defects' ? 'selected' : ''}
+            onClick={() => go('house/defects')}
+          >
             <Wrench size={17} />
             Mängel
           </button>
@@ -2069,7 +2288,7 @@ function HouseView() {
                 <PriorityBadge value={defect.priority} />
               </div>
               <h2>
-                <button className="heading-button" onClick={() => setSelectedDefect(defect.id)}>
+                <button className="heading-button" onClick={() => go(`house/defects/${defect.id}`)}>
                   {defect.title}
                 </button>
               </h2>
@@ -2079,7 +2298,10 @@ function HouseView() {
                 <Assignees ids={defect.assignees} />
               </div>
               <div className="defect-actions">
-                <button className="button secondary" onClick={() => setSelectedDefect(defect.id)}>
+                <button
+                  className="button secondary"
+                  onClick={() => go(`house/defects/${defect.id}`)}
+                >
                   <Camera size={16} />
                   Details & Fotos
                 </button>
@@ -2108,7 +2330,7 @@ function HouseView() {
         </div>
       )}
       {selected && (
-        <Modal title={selected.title} close={() => setSelectedDefect(null)} wide>
+        <Modal title={selected.title} close={() => go('house/defects')} wide>
           <div className="detail-meta">
             <PriorityBadge value={selected.priority} />
             <Assignees ids={selected.assignees} />
@@ -2120,7 +2342,7 @@ function HouseView() {
               className="button secondary"
               onClick={() => {
                 // Der Detaildialog wird ersetzt; zwei native modale Dialoge sollen nicht übereinander liegen.
-                setSelectedDefect(null);
+                go('house/defects');
                 edit('defects', selected);
               }}
             >
@@ -2131,7 +2353,7 @@ function HouseView() {
               className="button secondary"
               onClick={() => {
                 // Befund und Ortsbezug als Vorschlag übernehmen; der Mangel selbst bleibt unverändert offen.
-                setSelectedDefect(null);
+                go('house/defects');
                 edit('tasks', undefined, {
                   title: selected.title,
                   description: selected.description,
@@ -2140,6 +2362,7 @@ function HouseView() {
                   projectId: selected.projectId,
                   priority: selected.priority,
                   assignees: selected.assignees,
+                  dueDate: selected.dueDate,
                 });
               }}
             >
@@ -2219,6 +2442,12 @@ function ProjectDetail({ id }: { id: string }) {
         <div className="detail-meta">
           <span className={`status ${project.status}`}>{projectStatus[project.status]}</span>
           <PriorityBadge value={project.priority} />
+          {project.startDate && (
+            <span className="date-label">
+              <CalendarDays size={15} />
+              Geplant ab {fullDate(project.startDate)}
+            </span>
+          )}
           {project.dueDate && (
             <span className="date-label">
               <CalendarDays size={15} />
@@ -2343,7 +2572,9 @@ function ProjectDetail({ id }: { id: string }) {
           <p>
             {incomplete.length
               ? `Es gibt noch ${incomplete.length} offene Aufgaben. Ihr könnt das Projekt trotzdem bewusst abschließen; die Aufgaben bleiben erhalten.`
-              : 'Alle Aufgaben sind erledigt. Möchtet ihr das Projekt als abgeschlossen markieren?'}
+              : tasks.length
+                ? 'Alle Aufgaben sind erledigt. Möchtet ihr das Projekt als abgeschlossen markieren?'
+                : 'Hier sind noch keine Aufgaben geplant. Möchtet ihr das Projekt trotzdem als abgeschlossen markieren?'}
           </p>
           <div className="modal-actions">
             <button className="button secondary" onClick={() => setConfirmComplete(false)}>
@@ -2700,6 +2931,7 @@ function PlanningTimeline({ tasks }: { tasks: Task[] }) {
                   <button className="gantt-task-label" onClick={() => edit('tasks', task)}>
                     <strong>{task.title}</strong>
                     <small>{label}</small>
+                    <Assignees ids={task.assignees} />
                   </button>
                   <div className="gantt-lane">
                     <button
@@ -3676,14 +3908,11 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
     beforeZoom: 1,
     afterZoom: 1,
     ...spec.defaults,
-    ...spec.record,
+    ...recordFormValues(collection, spec.record),
   };
-  if (spec.record && collection === 'shopping')
-    defaults.unitPriceCents =
-      spec.record.unitPriceCents === null ? '' : (spec.record.unitPriceCents / 100).toFixed(2);
   const [form, setForm] = useState(defaults);
   // Diese Versionen gehören zum geöffneten Formular und folgen ausdrücklich nicht dem Hintergrund-Polling.
-  const [version, setVersion] = useState(spec.record?.version);
+  const [baseRecord, setBaseRecord] = useState(spec.record);
   const [authorContext, setAuthorContext] = useState<AuthorContext>({
     profileVersion: spec.profileVersion,
     profileId: spec.profileId,
@@ -3693,7 +3922,7 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
   const contextChanged = !hasSameAuthorContext(authorContext, session);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [conflict, setConflict] = useState<{ latest?: AnyRecord; profile?: Session } | null>(null);
+  const [conflict, setConflict] = useState<AnyRecord | null>(null);
   const [archiveConfirm, setArchiveConfirm] = useState(false);
   const [completeConfirm, setCompleteConfirm] = useState(false);
   // Die unveränderte Kennung lässt den Server wiederholtes Anlegen nach einem Verbindungsabbruch erkennen.
@@ -3714,17 +3943,20 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
    */
   const update = (field: string, value: any) =>
     setForm((previous) => ({ ...previous, [field]: value }));
-  /** Ein Projektwechsel entfernt unpassende Vorgänger und übernimmt bei Aufgaben den zugehörigen Raum. */
+  /** Ein Projektwechsel entfernt unpassende Vorgänger bzw. Bildpaare und übernimmt bei Aufgaben und Mängeln den Projektraum. */
   const updateProject = (projectId: string) => {
     setForm((previous) => ({
       ...previous,
       projectId,
-      ...(collection === 'tasks' && projectId !== previous.projectId
+      ...((collection === 'tasks' || collection === 'defects') && projectId !== previous.projectId
         ? {
-            predecessorIds: [],
             roomId:
               state.projects.find((project) => project.id === projectId)?.roomId || previous.roomId,
           }
+        : {}),
+      ...(collection === 'tasks' && projectId !== previous.projectId ? { predecessorIds: [] } : {}),
+      ...(collection === 'comparisons' && projectId !== previous.projectId
+        ? { beforeId: '', afterId: '' }
         : {}),
     }));
   };
@@ -3773,12 +4005,13 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
   };
   /**
    * Validiert zusammenhängende Felder und erstellt nur die für diese Sammlung erlaubte Nutzlast.
-   * Anlegen nutzt eine stabile Anfrage-ID; Bearbeiten sendet Datensatz- und Profilversion. Bei HTTP
-   * 409 lädt der Dialog den aktuellen Vergleichsstand, behält aber die eigenen Eingaben bis zur
+   * Anlegen nutzt eine stabile Anfrage-ID; Bearbeiten sendet Datensatz- und Profilversion. Bei
+   * Versionskonflikten zeigt der Dialog den aktuellen Vergleichsstand und behält eigene Eingaben bis zur
    * ausdrücklichen Bestätigung.
    */
   async function save(event?: FormEvent, extra: Record<string, any> = {}, confirmed = false) {
     event?.preventDefault();
+    if (busy || conflict) return;
     setError('');
     if (contextChanged) {
       setError('Bitte bestätige zuerst das aktuelle Namensschild oder öffne das Formular erneut.');
@@ -3808,7 +4041,7 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
     if (
       collection === 'projects' &&
       form.status === 'done' &&
-      spec.record?.status !== 'done' &&
+      baseRecord?.status !== 'done' &&
       active(state.tasks).some((t) => t.projectId === spec.record?.id && t.status !== 'done') &&
       !confirmed &&
       !extra.archivedAt
@@ -3832,11 +4065,16 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
     }
     if (isNew && collection === 'projects')
       body.rank = Math.max(0, ...state.projects.map((p) => p.rank)) + 1024;
+    // Unberührte Felder gehören auch nach einem bestätigten Versionskonflikt dem aktuellen Serverstand.
+    if (baseRecord) {
+      for (const field of fields[collection])
+        if (JSON.stringify(body[field]) === JSON.stringify(baseRecord[field])) delete body[field];
+    }
     Object.assign(
       body,
       extra,
       { profileVersion },
-      isNew ? { requestId: requestId.current } : { version },
+      isNew ? { requestId: requestId.current } : { version: baseRecord!.version },
     );
     setBusy(true);
     try {
@@ -3852,25 +4090,9 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
       close();
     } catch (error) {
       setError(errorText(error));
-      if (error instanceof ApiError && error.status === 403) await refresh();
-      if (error instanceof ApiError && error.status === 409) {
-        // Nur den Vergleichsstand laden: form, version und author werden hier bewusst nicht überschrieben.
-        try {
-          const [latestState, latestSession] = await Promise.all([
-            api<AppState>('/state'),
-            api<Session>('/session'),
-          ]);
-          setConflict({
-            latest: (latestState[collection] as unknown as AnyRecord[]).find(
-              (r) => r.id === spec.record?.id,
-            ),
-            profile: latestSession,
-          });
-        } catch {
-          /* Auch wenn der Vergleichsstand nicht erreichbar ist, bleiben die eigenen Eingaben erhalten. */
-        }
-        await refresh();
-      }
+      if (error instanceof ApiError && error.code === 'VERSION_CONFLICT' && error.record)
+        setConflict(error.record);
+      if (error instanceof ApiError && [401, 403, 409].includes(error.status)) await refresh();
     } finally {
       setBusy(false);
     }
@@ -3947,6 +4169,7 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
   const photoOptions = state.photos.filter(
     (p) => p.projectId === form.projectId && !p.deletedAt && !p.archivedAt,
   );
+  const sourceDefect = collection === 'tasks' && state.defects.find((d) => d.id === form.defectId);
   return (
     <Modal
       title={`${collectionLabels[collection]} ${isNew ? (collection === 'notes' ? 'schreiben' : 'anlegen') : 'bearbeiten'}`}
@@ -3956,6 +4179,19 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
       wide={collection === 'comparisons'}
     >
       <form onSubmit={(event) => void save(event)}>
+        {sourceDefect && (
+          <p>
+            Ursprünglicher Mangel:{' '}
+            <a
+              className="text-link"
+              href={`#/house/defects/${sourceDefect.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {sourceDefect.title} (in neuem Tab öffnen)
+            </a>
+          </p>
+        )}
         <div className="form-author">
           <Person id={author} prefix={isNew ? 'Neu von ' : 'Bearbeitung von '} />
           <span>Gemeinsam sichtbar</span>
@@ -4341,36 +4577,22 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
         {conflict && (
           <div className="conflict-box">
             <h3>Bitte den aktuellen Stand prüfen</h3>
-            <p>Deine Eingaben bleiben im Formular. Ein anderer Stand wurde nicht überschrieben.</p>
-            {conflict.latest && (
+            <p>
+              Prüfe die Änderungen vom anderen Gerät. Deine eigenen Eingaben bleiben erhalten.
+              Unbearbeitete Felder übernehmen den angezeigten Stand.
+            </p>
+            {baseRecord && (
               <div className="conflict-values">
-                {fields[collection]
+                {[...fields[collection], 'archivedAt']
                   .filter(
                     (field) =>
-                      JSON.stringify(conflict.latest![field]) !==
-                      JSON.stringify(spec.record?.[field]),
+                      JSON.stringify(conflict[field]) !== JSON.stringify(baseRecord[field]),
                   )
                   .map((field) => (
                     <div key={field}>
-                      <strong>
-                        {(
-                          {
-                            title: 'Titel',
-                            description: 'Beschreibung',
-                            status: 'Status',
-                            priority: 'Priorität',
-                            dueDate: 'Fälligkeit',
-                            startDate: 'Beginn',
-                            quantity: 'Menge',
-                            body: 'Notiz',
-                            assignees: 'Zuständigkeit',
-                          } as Record<string, string>
-                        )[field] || field}
-                        :
-                      </strong>{' '}
-                      {typeof conflict.latest![field] === 'string'
-                        ? conflict.latest![field]
-                        : JSON.stringify(conflict.latest![field])}
+                      <strong>{editorFieldLabels[field]}</strong>
+                      {' · '}
+                      {conflictValue(collection, field, conflict, state)}
                     </div>
                   ))}
               </div>
@@ -4380,8 +4602,14 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
               className="button secondary"
               disabled={busy || contextChanged}
               onClick={() => {
-                // Nur der Datensatzstand wird hier bestätigt; ein anderer Autor benötigt die eigene Bestätigung oben.
-                if (conflict.latest) setVersion(conflict.latest.version);
+                // Nur lokal unberührte Felder nachziehen; der nächste Speicherversuch bleibt versionsgeprüft.
+                if (!baseRecord) return;
+                setForm((draft) =>
+                  mergeEditorConflict(collection, fields[collection], draft, baseRecord, conflict),
+                );
+                setBaseRecord(conflict);
+                setArchiveConfirm(false);
+                setCompleteConfirm(false);
                 setConflict(null);
                 setError('');
               }}
@@ -4390,44 +4618,44 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
             </button>
           </div>
         )}
-        {spec.record && (
+        {baseRecord && (
           <div className="record-history">
             <span>
-              Erstellt von <strong>{name(spec.record.createdBy)}</strong>
+              Erstellt von <strong>{name(baseRecord.createdBy)}</strong>
               {' · '}
-              {fullDate(spec.record.createdAt)}
+              {fullDate(baseRecord.createdAt)}
             </span>
             <span>
-              Zuletzt geändert von <strong>{name(spec.record.updatedBy)}</strong>
+              Zuletzt geändert von <strong>{name(baseRecord.updatedBy)}</strong>
               {' · '}
-              {fullDate(spec.record.updatedAt)}
+              {fullDate(baseRecord.updatedAt)}
             </span>
-            {spec.record.completedBy && (
+            {baseRecord.completedBy && (
               <span>
-                Erledigt von <strong>{name(spec.record.completedBy)}</strong>
+                Erledigt von <strong>{name(baseRecord.completedBy)}</strong>
               </span>
             )}
-            {spec.record.purchasedBy && (
+            {baseRecord.purchasedBy && (
               <span>
-                Gekauft von <strong>{name(spec.record.purchasedBy)}</strong>
+                Gekauft von <strong>{name(baseRecord.purchasedBy)}</strong>
               </span>
             )}
           </div>
         )}
         <div className="modal-actions spread">
-          {!isNew ? (
+          {baseRecord ? (
             <button
               type="button"
               className="button text-button"
-              disabled={busy || contextChanged}
+              disabled={busy || contextChanged || !!conflict}
               onClick={() =>
-                spec.record!.archivedAt
+                baseRecord.archivedAt
                   ? void save(undefined, { archivedAt: null }, true)
                   : setArchiveConfirm(true)
               }
             >
               <Archive size={16} />
-              {spec.record!.archivedAt ? 'Wiederherstellen' : 'Archivieren'}
+              {baseRecord.archivedAt ? 'Wiederherstellen' : 'Archivieren'}
             </button>
           ) : (
             <button type="button" className="button secondary" disabled={busy} onClick={close}>

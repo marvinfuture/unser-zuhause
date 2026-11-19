@@ -1,12 +1,23 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, readFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, relative, isAbsolute, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { createApp } from "../server/app.js";
-import { registerMedia, mediaUsage } from "../server/media.js";
+import {
+  registerMedia,
+  mediaUsage,
+  cleanupMedia,
+  type MediaMetadata,
+} from "../server/media.js";
+import {
+  createBackup,
+  restoreBackup,
+  isBackupRunning,
+} from "../server/backup.js";
+import type { Photo, Comparison } from "../shared/types.js";
 
 /** Stellt einen isolierten Medienserver samt Testhaushalt bereit; Speichergrenzen können gezielt verkleinert werden. */
 async function fixture(t: TestContext, limitBytes?: number) {
@@ -242,6 +253,240 @@ test("media budget is enforced before writing a valid image record", async (t) =
     .toBuffer();
   assert.equal((await f.upload(input)).status, 507);
   assert.equal(f.ctx.db.list("photos").length, 0);
+});
+
+test("small photos use their actual storage instead of reserving the maximum upload size", async (t) => {
+  const f = await fixture(t, 4096);
+  const input = await sharp({
+    create: { width: 10, height: 10, channels: 3, background: "red" },
+  })
+    .png()
+    .toBuffer();
+  const uploaded = await f.upload(input);
+  assert.equal(uploaded.status, 201);
+  assert.ok(mediaUsage(f.ctx) > input.length && mediaUsage(f.ctx) < 4096);
+});
+
+test("trash cleanup preserves referenced photos and only expires unreferenced photos after 30 days", async (t) => {
+  const f = await fixture(t);
+  const input = await sharp({
+    create: { width: 8, height: 8, channels: 3, background: "blue" },
+  })
+    .png()
+    .toBuffer();
+  const first = (await f.upload(input)).data as Photo;
+  const second = (await f.upload(input, { category: "after" })).data as Photo;
+  const free = (await f.upload(input)).data as Photo;
+  const pair = await f.json("POST", "/comparisons", {
+    requestId: randomUUID(),
+    projectId: f.project.id,
+    title: "Geschütztes Paar",
+    beforeId: first.id,
+    afterId: second.id,
+  });
+  await f.json("PATCH", `/comparisons/${pair.data.id}`, {
+    version: pair.data.version,
+    archivedAt: new Date().toISOString(),
+  });
+  const old = new Date(Date.now() - 31 * 86_400_000).toISOString();
+  f.ctx.db.put("photos", { ...first, deletedAt: old } as Photo);
+  f.ctx.db.put("photos", {
+    ...free,
+    deletedAt: new Date(Date.now() - 29 * 86_400_000).toISOString(),
+  } as Photo);
+  await cleanupMedia(f.ctx);
+  assert.ok(
+    f.ctx.db.get("photos", first.id),
+    "archived comparisons retain their originals",
+  );
+  assert.ok(
+    f.ctx.db.get("photos", free.id),
+    "29 days is within the recovery period",
+  );
+  f.ctx.db.put("photos", { ...free, deletedAt: old } as Photo);
+  const metadata = f.ctx.db.getSetting<MediaMetadata>(`media:${free.id}`)!;
+  await cleanupMedia(f.ctx);
+  assert.equal(f.ctx.db.get("photos", free.id), undefined);
+  assert.equal(f.ctx.db.getSetting(`media:${free.id}`), undefined);
+  for (const path of [metadata.original, metadata.display, metadata.thumb])
+    await assert.rejects(access(join(f.dir, path)));
+  const retained = f.ctx.db.getSetting<MediaMetadata>(`media:${first.id}`)!;
+  await access(join(f.dir, retained.original));
+});
+
+test("a photo restored while trash cleanup awaits another file is retained", async (t) => {
+  const f = await fixture(t);
+  const input = await sharp({
+    create: { width: 8, height: 8, channels: 3, background: "green" },
+  })
+    .png()
+    .toBuffer();
+  const first = (await f.upload(input)).data as Photo;
+  const second = (await f.upload(input)).data as Photo;
+  const old = new Date(Date.now() - 31 * 86_400_000).toISOString();
+  f.ctx.db.put("photos", { ...first, deletedAt: old } as Photo);
+  f.ctx.db.put("photos", { ...second, deletedAt: old } as Photo);
+  const cleanup = cleanupMedia(f.ctx);
+  // Die erste Datei wird bereits asynchron gelöscht; die zweite kann in diesem Moment wiederhergestellt werden.
+  assert.equal(f.ctx.db.get("photos", first.id), undefined);
+  f.ctx.db.put("photos", {
+    ...second,
+    deletedAt: null,
+    version: second.version + 1,
+  } as Photo);
+  await cleanup;
+  assert.ok(
+    f.ctx.db.get("photos", second.id),
+    "a confirmed restoration must survive the running cleanup",
+  );
+  const metadata = f.ctx.db.getSetting<MediaMetadata>(`media:${second.id}`)!;
+  for (const path of [metadata.original, metadata.display, metadata.thumb])
+    await access(join(f.dir, path));
+});
+
+test("complete application backup restores photos, crop/zoom, defect links and revokes old sessions", async (t) => {
+  const f = await fixture(t);
+  const qaRoot = resolve(".qa");
+  await mkdir(qaRoot, { recursive: true });
+  const work = await mkdtemp(join(qaRoot, "media-restore-"));
+  const target = join(work, "restored");
+  let restored: ReturnType<typeof createApp> | undefined;
+  let server:
+    | ReturnType<ReturnType<typeof createApp>["app"]["listen"]>
+    | undefined;
+  try {
+    const original = await sharp({
+      create: { width: 80, height: 40, channels: 3, background: "red" },
+    })
+      .jpeg()
+      .toBuffer();
+    const after = await sharp({
+      create: { width: 40, height: 80, channels: 3, background: "blue" },
+    })
+      .png()
+      .toBuffer();
+    const beforePhoto = (await f.upload(original)).data as Photo;
+    const afterPhoto = (await f.upload(after, { category: "after" }))
+      .data as Photo;
+    const defect = (
+      await f.json("POST", "/defects", {
+        requestId: randomUUID(),
+        title: "Testmangel",
+      })
+    ).data;
+    const defectPhoto = (
+      await f.upload(after, { projectId: "", defectId: defect.id })
+    ).data as Photo;
+    const pair = (
+      await f.json("POST", "/comparisons", {
+        requestId: randomUUID(),
+        projectId: f.project.id,
+        title: "Ausschnitt behalten",
+        beforeId: beforePhoto.id,
+        afterId: afterPhoto.id,
+        beforeX: 20,
+        beforeY: 70,
+        beforeZoom: 1.6,
+        afterX: 80,
+        afterY: 30,
+        afterZoom: 2.2,
+      })
+    ).data as Comparison;
+    const run = createBackup({
+      dataDir: f.dir,
+      repositoryDir: join(work, "archive"),
+      passphrase: "Nur-Testpassphrase-2026",
+      database: f.ctx.db.raw,
+    });
+    assert.equal(isBackupRunning(f.dir), true);
+    await cleanupMedia(f.ctx);
+    assert.equal(f.ctx.db.list("photos").length, 3);
+    const snapshot = await run;
+    await restoreBackup({
+      repositoryDir: join(work, "archive"),
+      targetDir: target,
+      snapshotId: snapshot.id,
+      passphrase: "Nur-Testpassphrase-2026",
+    });
+    restored = createApp({
+      dataDir: target,
+      registerExtras: (ctx) => registerMedia(ctx, { minFreeBytes: 0 }),
+    });
+    assert.deepEqual(restored.db.get("comparisons", pair.id), pair);
+    assert.deepEqual(restored.db.get("photos", defectPhoto.id), defectPhoto);
+    assert.equal(
+      restored.db.raw.prepare("SELECT COUNT(*) AS n FROM sessions").get()!.n,
+      0,
+    );
+    assert.equal(
+      restored.db.raw.prepare("SELECT COUNT(*) AS n FROM idempotency").get()!.n,
+      0,
+    );
+    server = restored.app.listen(0, "127.0.0.1");
+    await new Promise<void>((done) => server!.once("listening", done));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const base = `http://127.0.0.1:${address.port}`;
+    assert.equal(
+      (
+        await fetch(`${base}/api/photos/${beforePhoto.id}/file`, {
+          headers: f.headers(),
+        })
+      ).status,
+      401,
+    );
+    const sessionResponse = await fetch(`${base}/api/session`);
+    const session = (await sessionResponse.json()) as any;
+    assert.equal(session.profileId, null);
+    const cookie = sessionResponse.headers.get("set-cookie")!.split(";")[0];
+    const choice = await fetch(`${base}/api/profile`, {
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        Origin: base,
+        "X-CSRF-Token": session.csrfToken,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        profileId: "marvin",
+        profileVersion: session.profileVersion,
+      }),
+    });
+    assert.equal(choice.status, 200);
+    for (const photo of [beforePhoto, afterPhoto, defectPhoto]) {
+      for (const variant of ["original", "display", "thumb"]) {
+        const response = await fetch(
+          `${base}/api/photos/${photo.id}/file?variant=${variant}`,
+          { headers: { Cookie: cookie } },
+        );
+        assert.equal(
+          response.status,
+          200,
+          `${photo.id}/${variant}: ${response.status === 200 ? "" : await response.text()}`,
+        );
+        const bytes = Buffer.from(await response.arrayBuffer());
+        if (variant === "original")
+          assert.deepEqual(
+            bytes,
+            photo.id === beforePhoto.id ? original : after,
+          );
+        else assert.equal((await sharp(bytes).metadata()).format, "webp");
+      }
+    }
+  } finally {
+    if (server) {
+      server.closeAllConnections();
+      await new Promise<void>((done) => server!.close(() => done()));
+    }
+    restored?.db.close();
+    const path = relative(qaRoot, work);
+    assert(
+      path.startsWith("media-restore-") &&
+        !isAbsolute(path) &&
+        !path.includes(sep),
+    );
+    await rm(work, { recursive: true, force: true });
+  }
 });
 
 test("HEIC sample decodes through the isolated worker when the optional local QA fixture is present", async (t) => {

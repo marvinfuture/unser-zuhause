@@ -564,6 +564,31 @@ export function createApp(options: AppOptions): AppContext {
       }
     }
   }
+  /** Verhindert, dass ein Projekt-Raumwechsel verknüpfte Aufgaben oder Mängel nachträglich ungültig macht; auch archivierte Einträge müssen bearbeitbar und wiederherstellbar bleiben. */
+  function checkProjectRoomChange(next: Project, current: Project): void {
+    if (!next.roomId || next.roomId === current.roomId) return;
+    const conflicts = [
+      ...db.list<Task>("tasks"),
+      ...db.list<
+        BaseRecord & {
+          title: string;
+          projectId: string | null;
+          roomId: string | null;
+        }
+      >("defects"),
+    ].filter(
+      (record) =>
+        record.projectId === next.id &&
+        record.roomId &&
+        record.roomId !== next.roomId,
+    );
+    if (conflicts.length)
+      throw new HttpError(
+        409,
+        `Diese Einträge sind noch einem anderen Raum zugeordnet: ${conflicts.map((record) => `„${record.title}“${record.archivedAt ? " (archiviert)" : ""}`).join(", ")}. Setzt deren Raum zuerst auf „Allgemein im Haus“. Danach könnt ihr den Projektraum ändern und die Einträge bei Bedarf neu zuordnen.`,
+        "PROJECT_ROOM_CONFLICT",
+      );
+  }
   /**
    * Prüft den vorgeschlagenen Aufgabenstand im selben Schreibvorgang wie das Speichern. Verhindert Kreise, fremde Projekte und einen Arbeitsbeginn vor allen Vorgängern; bestehende Nachfolger dürfen durch Wiederöffnen, Archivieren oder Verschieben nicht ungültig werden.
    */
@@ -688,6 +713,83 @@ export function createApp(options: AppOptions): AppContext {
       event: true,
     } as BaseRecord);
   }
+  /** POST /api/projects/:id/move: tauscht benachbarte geplante Projekte atomar. Der vollständige erwartete Reihenfolgenstand verhindert unbemerkte Änderungen durch ein zweites Gerät; gleiche oder zu enge Ränge werden dabei normalisiert. */
+  app.post("/api/projects/:id/move", requireWrite, (req, res) => {
+    const input = readBody(
+      z
+        .object({
+          direction: z.enum(["up", "down"]),
+          version: z.number().int().positive(),
+          profileVersion: z.number().int().min(0),
+          expectedOrder: z
+            .array(id)
+            .min(1)
+            .max(10_000)
+            .refine(
+              (values) => new Set(values).size === values.length,
+              "Die erwartete Projektfolge enthält doppelte Einträge.",
+            ),
+        })
+        .strict(),
+      req.body,
+    );
+    const actor = assertProfile(req, input.profileVersion);
+    const result = db.transaction(() => {
+      const current = db.get<Project>("projects", String(req.params.id));
+      if (!current)
+        throw new HttpError(
+          404,
+          "Dieses Projekt wurde nicht gefunden.",
+          "NOT_FOUND",
+        );
+      const planned = db
+        .list<Project>("projects")
+        .filter(
+          (project) =>
+            !project.archivedAt && ["idea", "planned"].includes(project.status),
+        )
+        .sort((a, b) => a.rank - b.rank);
+      if (
+        current.version !== input.version ||
+        planned.length !== input.expectedOrder.length ||
+        planned.some(
+          (project, index) => project.id !== input.expectedOrder[index],
+        )
+      )
+        throw new HttpError(
+          409,
+          "Die geplanten Projekte wurden inzwischen geändert. Bitte prüft die aktuelle Reihenfolge und verschiebt das Projekt erneut.",
+          "VERSION_CONFLICT",
+          current,
+        );
+      const from = planned.findIndex((project) => project.id === current.id);
+      if (from === -1)
+        throw new HttpError(
+          409,
+          "Nur nicht archivierte Ideen und geplante Projekte lassen sich in „Als Nächstes“ verschieben.",
+          "PROJECT_NOT_PLANNED",
+        );
+      const to = from + (input.direction === "up" ? -1 : 1);
+      if (to < 0 || to >= planned.length) return planned;
+      [planned[from], planned[to]] = [planned[to], planned[from]];
+      const now = new Date().toISOString();
+      return planned.map((project, index) => {
+        const rank = (index + 1) * 1024;
+        // Das bewusst verschobene Projekt erhält auch bei zufällig gleichem Zahlenrang eine neue Bearbeitungszuordnung.
+        if (project.rank === rank && project.id !== current.id) return project;
+        const updated = {
+          ...project,
+          rank,
+          version: project.version + 1,
+          updatedAt: now,
+          updatedBy: actor,
+        };
+        db.put("projects", updated);
+        return updated;
+      });
+    });
+    res.json(result);
+  });
   for (const collection of Object.keys(schemas) as Collection[]) {
     const schema = schemas[collection];
     /** POST je Sammlung: validiert Eingaben und Verknüpfungen; Eintrag, Verlauf und Wiederholungsschutz werden gemeinsam gespeichert. */
@@ -801,6 +903,11 @@ export function createApp(options: AppOptions): AppContext {
                 ? null
                 : new Date().toISOString(),
         } as BaseRecord & Record<string, unknown>;
+        if (collection === "projects")
+          checkProjectRoomChange(
+            next as unknown as Project,
+            current as unknown as Project,
+          );
         if (collection === "tasks") {
           next.completedBy =
             next.status === "done"

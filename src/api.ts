@@ -1,4 +1,4 @@
-import type { Session } from '../shared/types';
+import type { BaseRecord, Session } from '../shared/types';
 
 export type AuthorContext = Pick<Session, 'csrfToken' | 'profileVersion' | 'profileId'>;
 
@@ -21,6 +21,7 @@ export class ApiError extends Error {
     message: string,
     public status: number,
     public code = '',
+    public record?: BaseRecord & Record<string, unknown>,
   ) {
     super(message);
   }
@@ -63,6 +64,7 @@ export async function api<T>(
       data.message || 'Das hat gerade nicht geklappt. Bitte versuche es erneut.',
       response.status,
       data.code,
+      data.record,
     );
   return data as T;
 }
