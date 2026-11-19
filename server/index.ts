@@ -4,6 +4,7 @@ import { createApp } from "./app.js";
 import { registerMedia } from "./media.js";
 import { registerOperations } from "./operations.js";
 import { startPushScheduler } from "./push.js";
+import { runtimeVersion } from "../scripts/runtime-state.ts";
 
 const port = Number(process.env.PORT ?? 3210);
 if (!Number.isInteger(port) || port < 1 || port > 65535)
@@ -13,6 +14,7 @@ const dataDir = resolve(
 );
 const ctx = createApp({
   dataDir,
+  runtimeVersion: runtimeVersion(fileURLToPath(new URL("../", import.meta.url))),
   origin: process.env.APP_ORIGIN,
   secureCookies:
     process.env.SECURE_COOKIES === undefined

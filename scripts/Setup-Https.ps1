@@ -6,6 +6,17 @@ param(
     [switch]$ConfigureFirewall
 )
 . (Join-Path $PSScriptRoot 'Common.ps1')
+# Prüft den exakten Paketnamen und vergleicht das heruntergeladene Archiv mit der offiziellen SHA-256- oder SHA-512-Summe.
+function Assert-ZuhauseCaddyChecksum([string]$Path, [string]$AssetName, [string]$ChecksumText) {
+    $pattern = '^(\S+)\s+\*?' + [regex]::Escape($AssetName) + '\s*$'
+    $lines = @($ChecksumText -split "`n" | Where-Object { $_ -cmatch $pattern })
+    if ($lines.Count -ne 1) { throw 'Für dieses Caddy-Paket fehlt eine eindeutige offizielle Prüfsumme.' }
+    $expected = [regex]::Match($lines[0], $pattern).Groups[1].Value
+    if ($expected -cmatch '^[a-fA-F0-9]{64}$') { $algorithm = 'SHA256' }
+    elseif ($expected -cmatch '^[a-fA-F0-9]{128}$') { $algorithm = 'SHA512' }
+    else { throw 'Die offizielle Caddy-Prüfsumme hat ein unbekanntes Format.' }
+    if ((Get-FileHash -Algorithm $algorithm -LiteralPath $Path).Hash -ne $expected) { throw 'Caddy-Prüfsumme stimmt nicht.' }
+}
 if (Test-ZuhauseSupervisor) { throw 'App zuerst mit Stop.ps1 beenden, bevor die Adresse geändert wird.' }
 if ($ConfigureFirewall) { Assert-ZuhauseAdmin }
 $ip=$null
@@ -34,10 +45,11 @@ if (-not (Test-Path -LiteralPath $caddy)) {
     if (-not $asset -or -not $checksums) { throw 'Passendes offizielles Caddy-Paket oder Prüfsumme nicht gefunden.' }
     $zip=Join-Path $caddyDir $asset.name
     Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $zip
-    $sumText=(Invoke-WebRequest -UseBasicParsing -Uri $checksums.browser_download_url).Content
-    $sumLine=$sumText -split "`n" | Where-Object { $_ -match ([regex]::Escape($asset.name)+'\s*$') }
-    $expected=($sumLine -split '\s+')[0]
-    if (-not $expected -or (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash -ne $expected) { throw 'Caddy-Prüfsumme stimmt nicht.' }
+    # GitHub kann auch Prüfsummenlisten als Binärinhalt ausliefern. Die Datei immer ausdrücklich als Text lesen.
+    $manifestPath=Join-Path $caddyDir 'release-checksums.txt'
+    Invoke-WebRequest -UseBasicParsing -Uri $checksums.browser_download_url -OutFile $manifestPath
+    $sumText=Get-Content -Raw -Encoding ASCII -LiteralPath $manifestPath
+    Assert-ZuhauseCaddyChecksum -Path $zip -AssetName $asset.name -ChecksumText $sumText
     Expand-Archive -LiteralPath $zip -DestinationPath $caddyDir -Force
     $release.tag_name | Set-Content -LiteralPath (Join-Path $caddyDir 'version.txt') -Encoding ASCII
 }

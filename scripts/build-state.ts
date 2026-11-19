@@ -27,7 +27,7 @@ interface BuildMarker {
 }
 
 /** Liest Dateien unter einem festen Stamm; symbolische Verknüpfungen dürfen den Build-Abgleich nicht aus dem Projekt führen. */
-function filesBelow(root: string, directory: string): string[] {
+export function filesBelow(root: string, directory: string): string[] {
   const absolute = join(root, directory);
   if (!existsSync(absolute)) return [];
   if (lstatSync(absolute).isSymbolicLink())

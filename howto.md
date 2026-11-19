@@ -71,7 +71,7 @@ Anschließend starten:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start.ps1 -OpenBrowser
 ```
 
-Nach wenigen Sekunden im PC-Browser **http://localhost:3210** öffnen beziehungsweise neu laden. Es erscheint direkt die Auswahl Karla/Marvin. Das gilt auch auf einem bereits verwendeten Gerät; ein App-Kennwort wird weder eingerichtet noch abgefragt.
+Auf die Meldung **Unser Zuhause ist bereit** warten. Bei der ersten lokalen Einrichtung lautet die Adresse **http://localhost:3210**. Auf einem bereits für das Heimnetz eingerichteten PC zeigt das Skript die konfigurierte HTTPS-Adresse. Die App öffnet direkt die Auswahl Karla/Marvin.
 
 Karla oder Marvin auswählen. Einen Raum, ein Projekt und eine Aufgabe anlegen; die Seite neu laden und prüfen, dass die Einträge erhalten bleiben. Der aktuelle Name bleibt sichtbar. Über „Profil wechseln“ oder „Zur Profilauswahl“ könnt ihr die Zuordnung auf diesem Gerät ändern.
 
@@ -337,29 +337,25 @@ Nach dem Start Karla oder Marvin auswählen. Räume und Aufgaben prüfen, Fotos 
 
 ## 10. Programm aktualisieren
 
-Vor einem Update in der App eine erfolgreiche Sicherung prüfen. Danach in PowerShell jeden Befehl einzeln ausführen und bei Fehlern anhalten:
+Auf dem Hosting-PC in PowerShell die folgenden Befehle ausführen. Nach einem erfolgreichen Pull das Startskript aufrufen.
 
 ```powershell
 Set-Location C:\wxbapp
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Stop.ps1
-git status --short
 git pull --ff-only
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install.ps1
-$env:PATH = 'C:\wxbapp\.tools\node-v26.13.1-win-x64;' + $env:PATH
-npm.cmd test
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start.ps1
 ```
 
-Wenn `git status --short` eigene geänderte Dateien zeigt, diese vor dem Pull sichern beziehungsweise die Änderungen klären. Bei Git-Konflikten, Installations- oder Testfehlern nicht einfach weiter starten. `Install.ps1` baut die Oberfläche inklusive TypeScript-Prüfung neu; `Build.ps1` genügt nur, wenn die benötigten Pakete bereits installiert sind. Sollte sich die mitgelieferte Node-Version ändern, den Versionsordner in Befehlen entsprechend `Install.ps1` anpassen.
+Wartet vor dem Update laufende Uploads und Sicherungen ab. Wenn Git beim Pull einen Konflikt meldet, zuerst die lokalen Änderungen klären. Das Startskript erkennt einen noch laufenden älteren Dienst, beendet ihn und verwendet eure gespeicherte Konfiguration und den bisherigen Datenordner. Es gleicht die installierten Pakete mit der neuen Version ab und baut die Oberfläche bei Bedarf neu. Neue Pakete benötigen Internet, wenn sie auf dem PC noch nicht im npm-Zwischenspeicher liegen. Die erste Aktualisierung kann deshalb einige Minuten dauern.
 
-Nach dem Start die App auf PC und iPhone schließen und neu öffnen. Gewähltes Profil, Aufgaben und ein Foto kurz prüfen. Datenbankänderungen führt die App beim Start über Migrationen aus; dabei wird ein noch vorhandenes altes App-Kennwort entfernt. Für die Rückkehr zu einem älteren Stand die dazu passende Programmversion und Sicherung verwenden.
+Sobald **Unser Zuhause ist bereit** erscheint, hat das Skript den aktuellen App-Server und die Startseite über die angezeigte Adresse geprüft. Am iPhone die bisherige Home-Bildschirm-App öffnen. Steht dort noch **Wir sind gleich wieder da**, auf **Erneut verbinden** tippen. Für die Rückkehr zu einem älteren Stand die dazu passende Programmversion und Sicherung verwenden.
 
 ## 11. Wenn etwas nicht funktioniert
 
 | Problem | Nächster Prüfschritt |
 | --- | --- |
 | `git` wird nicht gefunden | Git installieren und PowerShell neu öffnen. |
-| Erste lokale Seite lädt nicht | Nach `Start.ps1` kurz warten, dann `http://localhost:3210` neu laden. Bei bestehender HTTPS-Konfiguration die HTTPS-Adresse verwenden. Protokolle prüfen. |
+| „Wir sind gleich wieder da“ auf PC und iPhone | Auf dem Hosting-PC `Start.ps1` ausführen und die Abschlussmeldung abwarten. Bei einem Startfehler zuerst die im Fenster genannte Ursache und das zugehörige Protokoll in `.runtime\logs` prüfen. Nach der Bereitschaftsmeldung die angezeigte Adresse im PC-Browser öffnen und am iPhone **Erneut verbinden** wählen. |
+| Paketinstallation nach einem Update fehlgeschlagen | Angaben in `.runtime\logs\install.err.log` prüfen. Fehlen neue Pakete im lokalen Zwischenspeicher, den Internetzugang des Hosting-PCs prüfen und `Start.ps1` erneut ausführen. |
 | Alte Kennwortseite oder „Diese Funktion wurde nicht gefunden“ | Die frühere Oberfläche ist noch geladen. App mit `Stop.ps1` stoppen und mit `Start.ps1` neu starten; fehlende oder veraltete Builddateien werden dabei automatisch neu erstellt. Danach am PC **Strg+F5**, auf dem iPhone Safari neu laden und die installierte Web-App gegebenenfalls schließen und wieder öffnen. Kein Kennwort eingeben. |
 | „Port 3210 belegt“ | Prüfen, ob ein manuell gestarteter Entwicklungsserver läuft. Diesen in seinem ursprünglichen Terminal beenden. Nicht beliebige Node-Prozesse abschießen. |
 | PC erreicht HTTPS, iPhone nicht | PC wach, richtige IP, iPhone im normalen Heim-WLAN, Windows-Profil privat und Schritt 5 einschließlich Firewall erfolgreich? Router-Geräteisolation/Gastnetz prüfen. |

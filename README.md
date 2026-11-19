@@ -28,7 +28,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start.ps1 -OpenBro
 
 Die erste lokale Adresse ist **http://localhost:3210**. Dort direkt Karla oder Marvin auswählen. Es gibt keine Seite zum Einrichten oder Eingeben eines App-Kennworts.
 
-Beim Start wird geprüft, ob die gebaute Oberfläche zum aktuellen Quellcode passt. Eine fehlende oder veraltete Oberfläche wird mit den bereits installierten Werkzeugen neu gebaut. Nach einem Git-Update die App stoppen und neu starten. Zeigt ein schon offener Browser noch die frühere Kennwortseite, einmal mit **Strg+F5** vollständig neu laden; auf dem iPhone die Seite in Safari neu laden und die installierte Web-App gegebenenfalls schließen und erneut öffnen.
+Für ein Update auf dem Hosting-PC `git pull --ff-only` ausführen und danach `scripts\Start.ps1` starten. Das Skript ersetzt einen eigenen laufenden älteren Dienst, richtet fehlende Pakete ein und baut die Oberfläche bei Bedarf neu. **Unser Zuhause ist bereit** bestätigt den aktuellen App-Server und die Startseite über die konfigurierte Adresse. Bei Problemen nennt das Fenster den fehlgeschlagenen Schritt und das passende Protokoll.
 
 Der lokale Start allein macht die App noch nicht im WLAN erreichbar. Für Handyzugriff und PWA-Installation wird die HTTPS-Einrichtung benötigt.
 

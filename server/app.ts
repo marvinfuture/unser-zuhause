@@ -57,6 +57,7 @@ export interface AppOptions {
   origin?: string;
   secureCookies?: boolean;
   distDir?: string;
+  runtimeVersion?: string;
   registerExtras?: (context: AppContext) => void;
 }
 
@@ -267,6 +268,12 @@ export function createApp(options: AppOptions): AppContext {
     next();
   });
   app.use(express.json({ limit: "256kb" }));
+  // Der Starter erkennt seine eigene Instanz auch hinter dem HTTPS-Proxy, ohne eine Gerätesitzung anzulegen.
+  if (options.runtimeVersion) {
+    app.get("/api/ready", (_req, res) => {
+      res.json({ application: "unser-zuhause", version: options.runtimeVersion });
+    });
+  }
 
   /**
    * Erlaubt Browser-Schreibzugriffe nur von der konfigurierten App-Adresse oder derselben lokalen Adresse. Anforderungen ohne Origin benötigen bei geschützten Schreibzugriffen weiterhin den CSRF-Nachweis.
