@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -12,6 +12,8 @@ import {
   openCalendarReminders,
   reminderDate,
   validDay,
+  type CalendarData,
+  type CalendarOverride,
   type CalendarSeries,
 } from '../shared/calendar.js';
 import type { ProfileId, Session } from '../shared/types.js';
@@ -117,7 +119,8 @@ async function device(origin: string, profileId: ProfileId) {
   return { send, session };
 }
 
-test('Zwei Geräte bearbeiten Müllserien und übertragen einen einzelnen Haushaltsbedarf höchstens einmal', async (t) => {
+/** Startet einen isolierten Haushalt und räumt Server, Datenbank und Testdaten nach jeder Kalenderprüfung auf. */
+async function testHousehold(t: TestContext) {
   const path = await mkdtemp(join(tmpdir(), 'unser-zuhause-kalender-'));
   const ctx = createApp({ dataDir: path });
   const server = ctx.app.listen(0, '127.0.0.1');
@@ -131,6 +134,11 @@ test('Zwei Geräte bearbeiten Müllserien und übertragen einen einzelnen Hausha
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   const origin = 'http://127.0.0.1:' + address.port;
+  return { ctx, origin };
+}
+
+test('Zwei Geräte bearbeiten Müllserien und übertragen einen einzelnen Haushaltsbedarf höchstens einmal', async (t) => {
+  const { ctx, origin } = await testHousehold(t);
   assert.equal((await fetch(origin + '/api/calendar')).status, 401);
   const karla = await device(origin, 'karla'),
     marvin = await device(origin, 'marvin');
@@ -279,4 +287,187 @@ test('Zwei Geräte bearbeiten Müllserien und übertragen einen einzelnen Hausha
     409,
   );
   assert.deepEqual(dueCalendarReminders(ctx.db, new Date('2026-02-14T18:00:00Z')), []);
+});
+
+test('Verschieben und anschließendes Bearbeiten eines Einzeltermins behalten eine Erinnerung und den Einkaufsbezug', async (t) => {
+  const { ctx, origin } = await testHousehold(t);
+  const karla = await device(origin, 'karla');
+  const marvin = await device(origin, 'marvin');
+  const created = await karla.send('POST', '/calendar', {
+    title: 'Seife',
+    kind: 'household',
+    startDay: '2026-02-10',
+    everyWeeks: null,
+    endDay: null,
+    remindDays: 1,
+    remindTime: '18:00',
+    profileIds: ['karla', 'marvin'],
+    requestId: randomUUID(),
+  });
+  assert.equal(created.status, 201);
+  const { id } = await created.json();
+  const path = '/calendar/' + id;
+  const actions = path + '/occurrences/';
+  const original = '2026-02-10';
+  const moved = '2026-02-11';
+  const edited = '2026-02-12';
+  assert.equal(
+    (
+      await marvin.send('POST', actions + original, {
+        action: 'move',
+        movedTo: moved,
+        seriesVersion: 1,
+        version: 0,
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await karla.send('PATCH', path, { startDay: edited, version: 1 })).status, 409);
+  assert.equal((await karla.send('PATCH', path, { startDay: edited, version: 2 })).status, 200);
+  const calendar: CalendarData = await (await marvin.send('GET', '/calendar')).json();
+  assert.equal(calendar.series[0].startDay, edited);
+  const visible = calendarOccurrences(calendar, original, '2026-02-28');
+  assert.deepEqual(
+    visible.map((row) => [row.day, row.originalDay]),
+    [[edited, original]],
+  );
+  assert.deepEqual(dueCalendarReminders(ctx.db, new Date('2026-02-10T17:00:00Z')), []);
+  const due = new Date('2026-02-11T17:00:00Z');
+  assert.deepEqual(
+    dueCalendarReminders(ctx.db, due).map((r) => [r.date, r.key]),
+    [[edited, id + ':' + original]],
+  );
+  assert.deepEqual(
+    openCalendarReminders(calendar, 'karla', due).map((r) => r.day),
+    [edited],
+  );
+  assert.equal(
+    (
+      await marvin.send('POST', actions + moved, {
+        action: 'skip',
+        seriesVersion: 3,
+        version: 0,
+      })
+    ).status,
+    404,
+  );
+  const purchase = await karla.send('POST', actions + original, {
+    action: 'shopping',
+    seriesVersion: 3,
+    version: visible[0].exception!.version,
+  });
+  assert.equal(purchase.status, 200);
+  const checked = await purchase.json();
+  assert.ok(checked.shoppingId);
+  assert.deepEqual(dueCalendarReminders(ctx.db, due), []);
+  assert.equal((await karla.send('PATCH', path, { everyWeeks: 1, version: 3 })).status, 200);
+  const recurring = calendarOccurrences(
+    await (await marvin.send('GET', '/calendar')).json(),
+    original,
+    '2026-02-20',
+  );
+  assert.deepEqual(
+    recurring.map((r) => r.day),
+    [edited, '2026-02-19'],
+  );
+  assert.equal(recurring[0].exception?.shoppingId, checked.shoppingId);
+  assert.equal(recurring[0].exception?.status, 'done');
+  assert.equal(recurring[1].exception, undefined);
+  assert.equal(
+    (
+      await marvin.send('POST', actions + '2026-02-19', {
+        action: 'move',
+        movedTo: edited,
+        seriesVersion: 4,
+        version: 0,
+      })
+    ).status,
+    200,
+  );
+  const both = calendarOccurrences(
+    await (await marvin.send('GET', '/calendar')).json(),
+    edited,
+    edited,
+  );
+  assert.deepEqual(
+    both.map((r) => r.originalDay),
+    [edited, '2026-02-19'],
+  );
+  assert.equal((await karla.send('PATCH', path, { everyWeeks: null, version: 4 })).status, 200);
+  const onceAgain = calendarOccurrences(
+    await (await karla.send('GET', '/calendar')).json(),
+    original,
+    '2026-03-01',
+  );
+  assert.deepEqual(
+    onceAgain.map((r) => [r.day, r.exception?.shoppingId]),
+    [[edited, checked.shoppingId]],
+  );
+  assert.equal(
+    (
+      await marvin.send('POST', actions + '2026-02-19', {
+        action: 'skip',
+        seriesVersion: 5,
+        version: 1,
+      })
+    ).status,
+    404,
+  );
+});
+
+test('Bestehende Einzeltermine mit alten Datumsaktionen zeigen einen Termin und bleiben bearbeitbar', async (t) => {
+  const { ctx, origin } = await testHousehold(t);
+  const karla = await device(origin, 'karla');
+  const oldSeries = { ...example(), everyWeeks: null, startDay: '2026-02-12', version: 2 };
+  const oldAction: CalendarOverride = {
+    ...oldSeries,
+    id: oldSeries.id + ':2026-02-10',
+    seriesId: oldSeries.id,
+    originalDay: '2026-02-10',
+    movedTo: '2026-02-11',
+    status: 'open',
+    shoppingId: null,
+    version: 1,
+  };
+  // So liegt ein Einzeltermin nach „Verschieben“ und „Eintrag bearbeiten“ in einer älteren Datenbank.
+  ctx.db.put('calendar', oldSeries);
+  ctx.db.put('calendarOverrides', oldAction);
+  const due = new Date('2026-02-11T17:00:00Z');
+  const legacyData = { series: [oldSeries], overrides: [oldAction] };
+  assert.deepEqual(
+    calendarOccurrences(legacyData, '2026-02-01', '2026-02-28').map((r) => r.day),
+    [oldSeries.startDay],
+  );
+  const current: CalendarData = await (await karla.send('GET', '/calendar')).json();
+  assert.deepEqual(
+    openCalendarReminders(current, 'karla', due).map((r) => r.originalDay),
+    [oldAction.originalDay],
+  );
+  assert.equal(dueCalendarReminders(ctx.db, due)[0].occurrenceVersion, oldAction.version);
+  const path = '/calendar/' + oldSeries.id;
+  assert.equal(
+    (
+      await karla.send('POST', path + '/occurrences/' + oldAction.originalDay, {
+        action: 'done',
+        version: oldAction.version,
+        seriesVersion: oldSeries.version,
+      })
+    ).status,
+    200,
+  );
+  assert.deepEqual(dueCalendarReminders(ctx.db, due), []);
+  // Ein Altbestand mit einer passenden Verschiebung vor der ersten Serienbearbeitung behält den wirksamen Tag.
+  ctx.db.put('calendar', { ...oldSeries, startDay: oldAction.originalDay } as CalendarSeries);
+  const before = (await (await karla.send('GET', '/calendar')).json()) as CalendarData;
+  assert.equal(before.series[0].startDay, oldAction.movedTo);
+  assert.equal((await karla.send('PATCH', path, { title: 'Neuer Titel', version: 2 })).status, 200);
+  const after = calendarOccurrences(
+    await (await karla.send('GET', '/calendar')).json(),
+    '2026-02-01',
+    '2026-02-28',
+  );
+  assert.deepEqual(
+    after.map((r) => [r.day, r.exception?.status]),
+    [[oldAction.movedTo, 'done']],
+  );
 });

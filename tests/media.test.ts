@@ -1,6 +1,15 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, readFile, access } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  rm,
+  readFile,
+  readdir,
+  access,
+} from "node:fs/promises";
+import { request } from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, relative, isAbsolute, sep } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -110,6 +119,7 @@ async function fixture(t: TestContext, limitBytes?: number) {
   };
   return {
     ctx,
+    server,
     dir,
     base,
     json,
@@ -171,6 +181,76 @@ test("photos validate content, preserve originals, orient previews and protect e
   );
   assert.equal((await f.upload(Buffer.from("not an image"))).status, 422);
   assert.equal(f.ctx.db.list("photos").length, 1);
+});
+
+test("Abbruch während der Übertragung und nach vollständigem Empfang lässt gespeicherte Fotos und den nächsten Upload intakt", async (t) => {
+  const f = await fixture(t);
+  const input = await sharp({
+    create: { width: 32, height: 24, channels: 3, background: "blue" },
+  })
+    .png()
+    .toBuffer();
+  const saved = await f.upload(input);
+  assert.equal(saved.status, 201);
+  const tmp = join(f.dir, "media", "tmp");
+  const session = (await f.json("GET", "/session")).data;
+  const boundary = "Foto-" + randomUUID();
+  const partial = request(f.base + "/api/photos", {
+    method: "POST",
+    headers: {
+      ...f.headers(),
+      Origin: f.base,
+      "X-CSRF-Token": session.csrfToken,
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+    },
+  });
+  const disconnected = new Promise<void>((done) => partial.on("close", done));
+  // Der Test trennt die Verbindung absichtlich nach dem ersten Teil eines synthetischen Bildes.
+  partial.on("error", () => {});
+  t.after(() => partial.destroy());
+  partial.write(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="foto.png"\r\nContent-Type: image/png\r\n\r\n`,
+  );
+  partial.write(input);
+  const deadline = Date.now() + 5000;
+  while (!(await readdir(tmp)).length) {
+    assert.ok(
+      Date.now() < deadline,
+      "Der Server muss das Teilbild empfangen haben.",
+    );
+    await delay(10);
+  }
+  partial.destroy();
+  await disconnected;
+
+  /** Wartet auf die Freigabe der begrenzten Verarbeitung und bestätigt einen neuen regulären Upload. */
+  async function nextPhoto() {
+    const until = Date.now() + 5000;
+    let result = await f.upload(input);
+    while (result.data.code === "UPLOAD_BUSY") {
+      assert.ok(
+        Date.now() < until,
+        "Der Uploadplatz muss nach dem Abbruch wieder frei sein.",
+      );
+      await delay(15);
+      result = await f.upload(input);
+    }
+    assert.equal(result.status, 201);
+    assert.deepEqual(await readdir(tmp), []);
+  }
+  await nextPhoto();
+
+  // Alle Bytes sind eingetroffen, der Browser trennt aber vor der Antwort und der Datenbankbestätigung.
+  f.server.prependOnceListener("request", (req) => {
+    req.once("end", () => req.socket.destroy());
+  });
+  await assert.rejects(f.upload(input));
+  await nextPhoto();
+  assert.ok(f.ctx.db.get("photos", saved.data.id));
+  assert.equal(f.ctx.db.list("photos").length, 3);
+  for (const kind of ["originals", "display", "thumb"]) {
+    assert.equal((await readdir(join(f.dir, "media", kind))).length, 3);
+  }
 });
 
 test("photo retries are idempotent and referenced images cannot disappear from comparisons", async (t) => {

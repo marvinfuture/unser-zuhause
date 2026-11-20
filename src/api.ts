@@ -79,17 +79,23 @@ export function photoUrl(id: string, variant = 'display') {
 
 /**
  * Überträgt genau ein Foto als Multipart-Anfrage. XMLHttpRequest wird hier für echte Upload-
- * Fortschrittsereignisse verwendet; erst eine erfolgreiche Serverantwort bestätigt die Speicherung.
+ * Fortschrittsereignisse verwendet; das Signal stoppt die Anfrage auch beim Warten auf die Verarbeitung.
  */
 export function uploadPhoto(
   data: FormData,
   session: Session,
   onProgress: (percent: number) => void,
+  signal: AbortSignal,
 ): Promise<unknown> {
   // Der Promise verbindet die ereignisbasierte Übertragung mit dem sequenziellen Uploadablauf der UI.
   return new Promise((resolve, reject) => {
+    if (signal.aborted) throw signal.reason;
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/photos');
+    /** Bricht die aktive Verbindung ab, damit auch der Server die Verarbeitung stoppen kann. */
+    const cancel = () => xhr.abort();
+    xhr.onabort = () => reject(signal.reason);
+    xhr.onloadend = () => signal.removeEventListener('abort', cancel);
     if (session.csrfToken) xhr.setRequestHeader('X-CSRF-Token', session.csrfToken);
     // Ohne bekannte Gesamtgröße wird kein irreführender Prozentwert aus einem Schätzwert erzeugt.
     xhr.upload.onprogress = (event) => {
@@ -122,6 +128,12 @@ export function uploadPhoto(
           ),
         );
     };
-    xhr.send(data);
+    signal.addEventListener('abort', cancel, { once: true });
+    try {
+      xhr.send(data);
+    } catch (error) {
+      signal.removeEventListener('abort', cancel);
+      reject(error);
+    }
   });
 }

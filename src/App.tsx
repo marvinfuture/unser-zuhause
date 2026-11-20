@@ -558,7 +558,7 @@ function Modal({
       className={`modal ${wide ? 'wide' : ''}`}
       aria-label={title}
       onCancel={(event) => {
-        // Der Aufrufer darf Schließen etwa während eines Uploads blockieren; nicht nativ vorzeitig schließen.
+        // Der Aufrufer übernimmt das Schließen und kann dabei noch laufende Arbeiten abbrechen.
         event.preventDefault();
         close();
       }}
@@ -3491,7 +3491,26 @@ function UploadDialog({
   const [current, setCurrent] = useState('');
   const [error, setError] = useState('');
   const [done, setDone] = useState(0);
-  const requests = useRef(new Map<File, string>());
+  const [cancelled, setCancelled] = useState(false);
+  const active = useRef<AbortController | null>(null);
+  const requests = useRef(new WeakMap<File, string>());
+  // Wird das Formular durch einen Seiten- oder Profilwechsel entfernt, endet auch seine Warteschlange.
+  useEffect(
+    () => () => {
+      active.current?.abort();
+      active.current = null;
+    },
+    [],
+  );
+  /** Beendet den laufenden Auftrag und schließt den Dialog, auch über Escape oder das Schließsymbol. */
+  function closeDialog() {
+    if (active.current) {
+      active.current.abort();
+      active.current = null;
+      void refresh();
+    }
+    close();
+  }
   /** Übernimmt das aktuelle Namensschild erst nach Bestätigung; die ausgewählten Dateien bleiben erhalten. */
   function confirmAuthorContext() {
     if (busy || !session.profileId) return;
@@ -3509,8 +3528,11 @@ function UploadDialog({
       setError('Bitte bestätige zuerst das aktuelle Namensschild oder öffne den Upload erneut.');
       return;
     }
-    if (!files.length) return;
+    if (!files.length || active.current) return;
+    const controller = new AbortController();
+    active.current = controller;
     setError('');
+    setCancelled(false);
     setBusy(true);
     let successful = 0;
     try {
@@ -3533,28 +3555,28 @@ function UploadDialog({
         // Bei einer verlorenen Antwort kann dieselbe Datei ohne unbeabsichtigte Dopplung erneut gesendet werden.
         if (!requests.current.has(file)) requests.current.set(file, crypto.randomUUID());
         data.append('requestId', requests.current.get(file)!);
-        await uploadPhoto(data, initial, setPercent);
+        await uploadPhoto(data, initial, setPercent, controller.signal);
         successful++;
         setDone((d) => d + 1);
         setFiles((previous) => previous.filter((f) => f !== file));
       }
-      await refresh();
+      void refresh();
       notify(`${successful} ${successful === 1 ? 'Foto gespeichert' : 'Fotos gespeichert'}.`);
       close();
     } catch (error) {
-      setError(errorText(error));
-      await refresh();
+      if (active.current !== controller) return;
+      if (controller.signal.aborted) setCancelled(true);
+      else setError(errorText(error));
+      void refresh();
     } finally {
-      setBusy(false);
+      if (active.current === controller) {
+        active.current = null;
+        setBusy(false);
+      }
     }
   }
   return (
-    <Modal
-      title="Einen Moment festhalten"
-      close={() => {
-        if (!busy) close();
-      }}
-    >
+    <Modal title="Einen Moment festhalten" close={closeDialog}>
       <form onSubmit={submit}>
         <AuthorContextNotice
           opened={initial}
@@ -3580,6 +3602,7 @@ function UploadDialog({
               // Die frühe Größenprüfung spart Übertragung; der Server prüft Inhalt und Grenzen unabhängig erneut.
               const selected = Array.from(event.target.files || []);
               setError('');
+              setCancelled(false);
               if (selected.length > 10) {
                 setError('Bitte höchstens 10 Fotos auf einmal auswählen.');
                 return;
@@ -3637,15 +3660,29 @@ function UploadDialog({
             <progress value={percent} max={100} />
           </div>
         )}
-        {done > 0 && <p className="success-text">{done} Fotos bereits gespeichert.</p>}
+        {done > 0 && (
+          <p className="success-text">
+            {done} {done === 1 ? 'Foto' : 'Fotos'} bereits gespeichert.
+          </p>
+        )}
+        {cancelled && (
+          <p role="status">
+            Upload abgebrochen. Gespeicherte Fotos bleiben in der Galerie.
+            Du kannst die restliche Auswahl erneut hochladen.
+          </p>
+        )}
         {error && (
           <div className="form-error" role="alert">
             {error}
           </div>
         )}
         <div className="modal-actions">
-          <button type="button" className="button secondary" onClick={close} disabled={busy}>
-            Schließen
+          <button
+            type="button"
+            className="button secondary"
+            onClick={busy ? () => active.current?.abort() : closeDialog}
+          >
+            {busy ? 'Upload abbrechen' : 'Schließen'}
           </button>
           <button className="button primary" disabled={busy || contextChanged || !files.length}>
             {busy ? <LoaderCircle className="spin" size={17} /> : <ImagePlus size={17} />}Fotos
@@ -4019,6 +4056,12 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
   const [form, setForm] = useState(defaults);
   // Diese Versionen gehören zum geöffneten Formular und folgen ausdrücklich nicht dem Hintergrund-Polling.
   const [baseRecord, setBaseRecord] = useState(spec.record);
+  // Nur die lesende Verlaufsanzeige folgt dem aktuellen Stand vom anderen Gerät.
+  const savedTask =
+    collection === 'tasks' && baseRecord
+      ? (state.tasks.find((task) => task.id === baseRecord.id) ?? (baseRecord as Task))
+      : undefined;
+  const historyRecord: AnyRecord | undefined = savedTask ?? baseRecord;
   const [authorContext, setAuthorContext] = useState<AuthorContext>({
     profileVersion: spec.profileVersion,
     profileId: spec.profileId,
@@ -4725,37 +4768,37 @@ function RecordEditor({ spec, close }: { spec: EditorSpec; close: () => void }) 
             </button>
           </div>
         )}
-        {baseRecord && (
+        {historyRecord && (
           <div className="record-history">
             <span>
-              Erstellt von <strong>{name(baseRecord.createdBy)}</strong>
+              Erstellt von <strong>{name(historyRecord.createdBy)}</strong>
               {' · '}
-              {fullDate(baseRecord.createdAt)}
+              {fullDate(historyRecord.createdAt)}
             </span>
             <span>
-              Zuletzt geändert von <strong>{name(baseRecord.updatedBy)}</strong>
+              Zuletzt geändert von <strong>{name(historyRecord.updatedBy)}</strong>
               {' · '}
-              {fullDate(baseRecord.updatedAt)}
+              {fullDate(historyRecord.updatedAt)}
             </span>
-            {baseRecord.completedBy && (
+            {historyRecord.completedBy && (
               <span>
-                Erledigt von <strong>{name(baseRecord.completedBy)}</strong>
+                Erledigt von <strong>{name(historyRecord.completedBy)}</strong>
               </span>
             )}
-            {baseRecord.purchasedBy && (
+            {historyRecord.purchasedBy && (
               <span>
-                Gekauft von <strong>{name(baseRecord.purchasedBy)}</strong>
+                Gekauft von <strong>{name(historyRecord.purchasedBy)}</strong>
               </span>
             )}
           </div>
         )}
-        {collection === 'tasks' && baseRecord && (
+        {savedTask && (
           <TaskHistory
-            key={baseRecord.id}
-            task={baseRecord as Task}
+            key={savedTask.id}
+            task={savedTask}
             label={(field) => editorFieldLabels[field]}
             format={(field, value) =>
-              conflictValue('tasks', field, { ...baseRecord, [field]: value }, state)
+              conflictValue('tasks', field, { ...savedTask, [field]: value }, state)
             }
           />
         )}

@@ -6,6 +6,7 @@ import {
   calendarOccurrences,
   hasOccurrence,
   reminderDate,
+  singleOccurrence,
   validDay,
   type CalendarData,
   type CalendarFields,
@@ -59,16 +60,57 @@ function checkSchedule(series: CalendarFields): void {
     );
 }
 
+/** Ergänzt für alte Einzeltermine das wirksame Datum und den tatsächlichen Schlüssel ihrer früheren Aktionen, ohne den Bestand umzuschreiben. */
+function resolveCalendarSeries(
+  series: CalendarSeries,
+  overrides: CalendarOverride[],
+): CalendarSeries {
+  if (series.everyWeeks || series.occurrenceDay) return series;
+  const occurrence = singleOccurrence(
+    series,
+    overrides.filter((row) => row.seriesId === series.id),
+  );
+  return { ...series, startDay: occurrence.day, occurrenceDay: occurrence.originalDay };
+}
+
 /** Liest Serien und ihre einzelnen Ausnahmen aus dem gemeinsamen, gesicherten SQLite-Datenbestand. */
 function calendarData(db: Store): CalendarData {
+  const overrides = db.list<CalendarOverride>('calendarOverrides');
   return {
-    series: db.list<CalendarSeries>('calendar'),
-    overrides: db.list<CalendarOverride>('calendarOverrides'),
+    series: db
+      .list<CalendarSeries>('calendar')
+      .map((series) => resolveCalendarSeries(series, overrides)),
+    overrides,
   };
+}
+
+/** Übernimmt beim Wechsel zur Wiederholung den Status und den Einkaufsbezug des Einzeltermins auf den ersten regulären Serientag. */
+function beginRecurrence(db: Store, current: CalendarSeries, next: CalendarSeries): void {
+  const sourceId = current.id + ':' + current.occurrenceDay;
+  const source = db.get<CalendarOverride>('calendarOverrides', sourceId);
+  const targetId = next.id + ':' + next.startDay;
+  if (source) {
+    if (sourceId !== targetId && db.get('calendarOverrides', targetId))
+      throw new HttpError(
+        409,
+        'Für den gewählten Serienbeginn gibt es bereits eine andere gespeicherte Terminaktion. Bitte einen anderen Serienbeginn wählen.',
+        'OCCURRENCE_CONFLICT',
+      );
+    if (sourceId !== targetId) db.remove('calendarOverrides', sourceId);
+    db.put('calendarOverrides', {
+      ...source,
+      id: targetId,
+      originalDay: next.startDay,
+      movedTo: null,
+      version: source.version + 1,
+    } as CalendarOverride);
+  }
+  delete next.occurrenceDay;
 }
 
 export interface CalendarReminder {
   key: string;
+  previousDateKey?: string;
   seriesId: string;
   seriesVersion: number;
   occurrenceVersion: number;
@@ -100,6 +142,10 @@ export function dueCalendarReminders(db: Store, now: Date): CalendarReminder[] {
     if (due.getTime() <= since || due > now) continue;
     reminders.push({
       key: item.series.id + ':' + item.originalDay,
+      // Ältere Stände konnten denselben Einzeltermin unter dem neu eingetragenen Datum schon zugestellt haben.
+      ...(!item.series.everyWeeks && item.originalDay !== item.day
+        ? { previousDateKey: item.series.id + ':' + item.day }
+        : {}),
       seriesId: item.series.id,
       seriesVersion: item.series.version,
       occurrenceVersion: item.exception?.version ?? 0,
@@ -124,7 +170,9 @@ export function registerCalendar(ctx: AppContext): void {
   function getSeries(id: string): CalendarSeries {
     const series = db.get<CalendarSeries>('calendar', id);
     if (!series) throw new HttpError(404, 'Diesen Kalendereintrag gibt es nicht.', 'NOT_FOUND');
-    return series;
+    return series.everyWeeks || series.occurrenceDay
+      ? series
+      : resolveCalendarSeries(series, db.list<CalendarOverride>('calendarOverrides'));
   }
   app.get('/api/calendar', requireSession, (req, res) => {
     ctx.getActor(req);
@@ -154,6 +202,7 @@ export function registerCalendar(ctx: AppContext): void {
       const now = new Date().toISOString();
       const record: CalendarSeries = {
         ...input,
+        ...(input.everyWeeks ? {} : { occurrenceDay: input.startDay }),
         id: randomUUID(),
         createdAt: now,
         updatedAt: now,
@@ -190,6 +239,8 @@ export function registerCalendar(ctx: AppContext): void {
       };
       if (archived !== undefined) next.archivedAt = archived ? now : null;
       checkSchedule(next);
+      if (!current.everyWeeks && next.everyWeeks) beginRecurrence(db, current, next);
+      if (current.everyWeeks && !next.everyWeeks) next.occurrenceDay = next.startDay;
       db.put('calendar', next);
       return next;
     });
@@ -211,7 +262,10 @@ export function registerCalendar(ctx: AppContext): void {
         );
       const id = series.id + ':' + originalDay;
       const current = db.get<CalendarOverride>('calendarOverrides', id);
-      if (!current && !hasOccurrence(series, originalDay))
+      const exists = series.everyWeeks
+        ? !!current || hasOccurrence(series, originalDay)
+        : originalDay === series.occurrenceDay;
+      if (!exists)
         throw new HttpError(404, 'An diesem Tag gibt es keinen solchen Serientermin.', 'NOT_FOUND');
       if (input.action === 'shopping' && current?.shoppingId && current.status === 'done')
         return current;
@@ -242,6 +296,17 @@ export function registerCalendar(ctx: AppContext): void {
           if (!input.movedTo)
             throw new HttpError(400, 'Bitte das neue Datum wählen.', 'VALIDATION');
           next.movedTo = input.movedTo === originalDay ? null : input.movedTo;
+          // Beide Bearbeitungswege eines Einzeltermins ändern dasselbe Datum. Die Serienversion schützt offene Formulare auf dem zweiten Gerät.
+          if (!series.everyWeeks && input.movedTo !== series.startDay) {
+            const movedSeries: CalendarSeries = {
+              ...series,
+              startDay: input.movedTo,
+              version: series.version + 1,
+              updatedBy: actor,
+              updatedAt: now,
+            };
+            db.put('calendar', movedSeries);
+          }
           break;
         case 'skip':
           next.status = 'skipped';

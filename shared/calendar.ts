@@ -11,7 +11,10 @@ export interface CalendarFields {
   remindTime: string;
   profileIds: ProfileId[];
 }
-export interface CalendarSeries extends CalendarFields, BaseRecord {}
+export interface CalendarSeries extends CalendarFields, BaseRecord {
+  /** Hält den ursprünglichen Einzeltag als Schlüssel für Aktionen und Erinnerungen auch nach Datumsänderungen fest. */
+  occurrenceDay?: string;
+}
 export interface CalendarOverride extends BaseRecord {
   seriesId: string;
   originalDay: string;
@@ -67,7 +70,33 @@ export function hasOccurrence(series: CalendarFields, day: string): boolean {
   return daysBetween(series.startDay, day) % (series.everyWeeks * 7) === 0;
 }
 
-/** Liefert die Termine im sichtbaren Zeitfenster. Verschobene und bereits bearbeitete Einzeltage behalten ihre Identität. */
+/** Bestimmt für einen Einzeltermin genau einen Tag und die zugehörige gespeicherte Ausnahme, auch bei älteren Terminverschiebungen. */
+export function singleOccurrence(
+  series: CalendarSeries,
+  exceptions: CalendarOverride[],
+): Occurrence {
+  if (series.occurrenceDay) {
+    const originalDay = series.occurrenceDay;
+    return {
+      series,
+      originalDay,
+      day: series.startDay,
+      exception: exceptions.find((item) => item.originalDay === originalDay),
+    };
+  }
+  // Früher stand eine einzelne Verschiebung nur in der Ausnahme. Nach einer späteren
+  // Änderung des Startdatums gilt dieses neue Datum; der alte Datensatz trägt weiter Status und Einkaufsbezug.
+  const current = exceptions.find((item) => item.originalDay === series.startDay);
+  const exception = current ?? (exceptions.length === 1 ? exceptions[0] : undefined);
+  return {
+    series,
+    originalDay: exception?.originalDay ?? series.startDay,
+    day: current?.movedTo ?? series.startDay,
+    exception,
+  };
+}
+
+/** Liefert die Termine im sichtbaren Zeitfenster; eigenständig bearbeitete Tage einer wiederkehrenden Serie behalten ihre Identität. */
 export function calendarOccurrences(data: CalendarData, from: string, to: string): Occurrence[] {
   if (from > to) return [];
   const result: Occurrence[] = [];
@@ -80,16 +109,19 @@ export function calendarOccurrences(data: CalendarData, from: string, to: string
   for (const series of data.series) {
     if (series.archivedAt) continue;
     const exceptions = bySeries.get(series.id) ?? [];
+    if (!series.everyWeeks) {
+      const occurrence = singleOccurrence(series, exceptions);
+      if (occurrence.day >= from && occurrence.day <= to) result.push(occurrence);
+      continue;
+    }
     const changed = new Set(exceptions.map((item) => item.originalDay));
     for (const exception of exceptions) {
       const day = exception.movedTo || exception.originalDay;
       if (day >= from && day <= to)
         result.push({ series, day, originalDay: exception.originalDay, exception });
     }
-    const step = (series.everyWeeks ?? 1) * 7;
-    const first = series.everyWeeks
-      ? Math.max(0, Math.ceil(daysBetween(series.startDay, from) / step)) * step
-      : 0;
+    const step = series.everyWeeks * 7;
+    const first = Math.max(0, Math.ceil(daysBetween(series.startDay, from) / step)) * step;
     const last = Math.min(
       daysBetween(series.startDay, to),
       series.endDay ? daysBetween(series.startDay, series.endDay) : Infinity,
@@ -97,7 +129,6 @@ export function calendarOccurrences(data: CalendarData, from: string, to: string
     for (let offset = first; offset <= last; offset += step) {
       const day = addDays(series.startDay, offset);
       if (day >= from && !changed.has(day)) result.push({ series, day, originalDay: day });
-      if (!series.everyWeeks) break;
     }
   }
   return result.sort(

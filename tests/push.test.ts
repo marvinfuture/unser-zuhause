@@ -7,6 +7,7 @@ import test, { type TestContext } from "node:test";
 import { runInNewContext } from "node:vm";
 import * as webpush from "web-push";
 import type { ProfileId, Session } from "../shared/types.js";
+import type { CalendarOverride, CalendarSeries } from "../shared/calendar.js";
 import { createApp } from "../server/app.js";
 import { dispatchPush } from "../server/push.js";
 import { createBackup, restoreBackup } from "../server/backup.js";
@@ -125,6 +126,43 @@ test("Beim Versand abgehakte Termine bleiben still und ein verschobener Termin e
     received.push(message.title);
   });
   assert.deepEqual(received, ["A Papier", "A Papier"]);
+});
+
+test("Ein früher doppelt dargestellter Einzeltermin erinnert nur Geräte ohne vorhandene Zustellbestätigung", async (t) => {
+  const { ctx, karla, entry } = await fixture(t);
+  const first = subscription();
+  await karla.post("push/subscribe", { subscription: first, contactEmail: "test@example.test" });
+  const created: CalendarSeries = await entry("Papiertonne", ["karla"]);
+  // Vor dem Update konnte der unveränderte Termintag bereits ohne die alte Verschiebung zugestellt worden sein.
+  const series: CalendarSeries = { ...created, everyWeeks: null };
+  ctx.db.put("calendar", series);
+  const deliveries: string[] = [];
+  /** Zeichnet die Testgeräte lokal auf, ohne eine Nachricht an einen Pushanbieter zu senden. */
+  const record: NonNullable<Parameters<typeof dispatchPush>[2]> = async (device) => {
+    deliveries.push(device.endpoint);
+  };
+  await dispatchPush(ctx.db, now, record);
+  const originalDay = "2030-02-05";
+  const override: CalendarOverride = {
+    id: series.id + ":" + originalDay,
+    seriesId: series.id,
+    originalDay,
+    movedTo: "2030-02-06",
+    status: "open",
+    shoppingId: null,
+    archivedAt: null,
+    version: 1,
+    updatedAt: series.updatedAt,
+    updatedBy: "karla",
+    createdAt: series.createdAt,
+    createdBy: "karla",
+  };
+  ctx.db.put("calendarOverrides", override);
+  const second = subscription();
+  await karla.post("push/subscribe", { subscription: second });
+  await dispatchPush(ctx.db, now, record);
+  await dispatchPush(ctx.db, now, record);
+  assert.deepEqual(deliveries, [first.endpoint, second.endpoint]);
 });
 
 test("Push-Einrichtung validiert Profil, Herkunft des Endpunkts und Schlüssel, ohne Geräteinformationen offenzulegen", async (t) => {

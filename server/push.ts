@@ -237,7 +237,9 @@ export async function dispatchPush(
   const messages = dueCalendarReminders(db, now);
   for (const { key } of devices) {
     for (const message of messages) {
-      const receiptKey = digest(message.key + ":" + message.dueAt);
+      const receiptKeys = [message.key];
+      if (message.previousDateKey) receiptKeys.push(message.previousDateKey);
+      const receipts = receiptKeys.map((occurrence) => digest(occurrence + ":" + message.dueAt));
       const device = db.transaction(() => {
         // Während der vorigen Zustellung kann die Serie verschoben oder dieser Termin abgehakt worden sein.
         if (
@@ -251,10 +253,10 @@ export async function dispatchPush(
           (message.profileIds.length && !message.profileIds.includes(current.profile))
         )
           return;
-        if (current.receipts[receiptKey] > time) return;
+        if (receipts.some((receipt) => current.receipts[receipt] > time)) return;
         for (const [id, until] of Object.entries(current.receipts))
           if (until <= time) delete current.receipts[id];
-        current.receipts[receiptKey] = time + 10 * minute;
+        for (const receipt of receipts) current.receipts[receipt] = time + 10 * minute;
         db.setSetting(key, current);
         return current;
       });
@@ -277,7 +279,8 @@ export async function dispatchPush(
         forget(db, key);
         break;
       }
-      current.receipts[receiptKey] = time + (error ? 10 * minute : 3 * day);
+      for (const receipt of receipts)
+        current.receipts[receipt] = time + (error ? 10 * minute : 3 * day);
       current.lastFailure = error ? now.toISOString() : null;
       db.setSetting(key, current);
     }

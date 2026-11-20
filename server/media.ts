@@ -77,14 +77,16 @@ function safeMediaPath(dataDir: string, path: string): string {
   return full;
 }
 /**
- * Startet die Bildprüfung in einem separaten Worker und liefert Format sowie Größe der erzeugten Vorschauen. Timeout oder Decoderfehler beenden den Worker, bevor die Anfrage fortgesetzt wird.
+ * Erzeugt Vorschauen im Worker. Bei Zeitüberschreitung, Abbruch oder Decoderfehler wartet die Bereinigung auf das Ende des Workers.
  */
 export function processImage(
   input: string,
   display: string,
   thumb: string,
+  signal: AbortSignal = new AbortController().signal,
 ): Promise<ImageResult> {
   return new Promise((done, fail) => {
+    signal.throwIfAborted();
     const worker = new Worker(new URL("./image-worker.mjs", import.meta.url), {
       workerData: { input, display, thumb, maxPixels: 60_000_000 },
       resourceLimits: { maxOldGenerationSizeMb: 256 },
@@ -98,6 +100,7 @@ export function processImage(
       if (finished) return;
       finished = true;
       clearTimeout(timer);
+      signal.removeEventListener("abort", cancel);
       // Vor dem Aufräumen unter Windows auf das Ende der Decoderarbeit und ihrer Dateihandles warten.
       void worker.terminate().then(
         () => {
@@ -115,6 +118,9 @@ export function processImage(
           ),
       );
     };
+    /** Stoppt den Worker, wenn das Gerät die Verbindung vor der Speicherung schließt. */
+    const cancel = () => finish(signal.reason);
+    signal.addEventListener("abort", cancel, { once: true });
     const timer = setTimeout(
       () =>
         finish(
@@ -268,6 +274,10 @@ export function registerMedia(
         ),
       );
     busy = true;
+    const controller = new AbortController();
+    /** Unterbricht auch nach vollständiger Übertragung die Bildverarbeitung, sobald der Browser die Antwortverbindung schließt. */
+    const onDisconnect = () => controller.abort();
+    res.once("close", onDisconnect);
     const staging: string[] = [];
     const committedPaths: string[] = [];
     let saved = false;
@@ -298,6 +308,7 @@ export function registerMedia(
           "STORAGE_FULL",
         );
       await receive(req, res);
+      controller.signal.throwIfAborted();
       if (!req.file)
         throw new HttpError(400, "Bitte ein Foto auswählen.", "VALIDATION");
       staging.push(
@@ -393,7 +404,12 @@ export function registerMedia(
           "Der Fotospeicher ist voll. Bitte die Speichergrenze prüfen.",
           "STORAGE_FULL",
         );
-      const result = await processImage(staging[0], staging[1], staging[2]);
+      const result = await processImage(
+        staging[0],
+        staging[1],
+        staging[2],
+        controller.signal,
+      );
       assertProfile(req, req.body.profileVersion); // Nach der asynchronen Bildverarbeitung die Profilwahl erneut prüfen.
       const currentTarget = projectId
         ? db.get<Project>("projects", projectId)
@@ -424,6 +440,7 @@ export function registerMedia(
         await rename(staging[i], dest);
         committedPaths.push(dest);
       }
+      controller.signal.throwIfAborted();
       assertProfile(req, req.body.profileVersion);
       const finalTarget = projectId
         ? db.get<Project>("projects", projectId)
@@ -462,6 +479,7 @@ export function registerMedia(
       res.status(201).json(photo);
     } catch (error) {
       await clean();
+      if (controller.signal.aborted || res.destroyed) return;
       if (error instanceof multer.MulterError)
         next(
           new HttpError(
@@ -472,6 +490,7 @@ export function registerMedia(
         );
       else next(error);
     } finally {
+      res.off("close", onDisconnect);
       await clean();
     }
   });

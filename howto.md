@@ -97,11 +97,15 @@ Wenn ihr die Vorgänger einer bereits laufenden oder erledigten Aufgabe ändern 
 
 ### Vorher und Nachher vergleichen
 
+Unter **Fotos hinzufügen** könnt ihr mehrere Bilder auswählen. **Upload abbrechen** stoppt die laufende Übertragung und die Warteschlange. Bereits gespeicherte Bilder findet ihr in der Galerie. Mit **Fotos speichern** könnt ihr die übrige Auswahl erneut hochladen.
+
 Im Projekt Fotos hochladen und ein Vorher-/Nachher-Bildpaar auswählen. Der Vergleich zeigt beide Fotos übereinander; mit dem Schieberegler legt ihr mehr vom einen oder anderen Bild frei. Mit **Nur Vorher**, **Vergleichen** und **Nur Nachher** springt ihr zur entsprechenden Ansicht. Den Regler am PC mit der Tabulatortaste auswählen und mit den Pfeiltasten verschieben; am iPhone mit dem Finger ziehen. Bei unterschiedlichen Ausschnitten die Bildposition und den Zoom anpassen. Am besten funktioniert der Vergleich mit Fotos desselben Motivs aus einem ähnlichen Blickwinkel.
 
 ### Alltag, Projektschritte und Verlauf
 
 Unter **Aufgaben → Alltagserledigungen** einen Titel wie „Glaser anrufen“ eintragen und **Hinzufügen** wählen. Das Häkchen erledigt die Aufgabe. Über ihren Titel könnt ihr später jemanden zuweisen, eine Frist setzen oder den **Bearbeitungsverlauf** aufklappen. Dort seht ihr Person, Zeitpunkt sowie alte und neue Feldwerte. Bei Aufgaben aus einer älteren Version beginnt die detaillierte Aufzeichnung mit diesem Update.
+
+Solange die App sichtbar ist, fragt sie etwa alle zehn Sekunden nach Änderungen. Bearbeitet die andere Person dieselbe Aufgabe, erscheint die Änderung im aufgeklappten Verlauf. Eure eigenen ungespeicherten Eingaben bleiben stehen. Treffen zwei Bearbeitungen aufeinander, zeigt die App beim Speichern den Konflikt an.
 
 Im Projekt unter **Planung → Kleinen Projektschritt anlegen** genauso vorgehen. Jeder Schritt zählt als Aufgabe im Fortschrittsbalken. Der Klick auf den nächsten startbereiten Schritt öffnet die Details. Abhängigkeiten und Phasen lassen sich dort bearbeiten.
 
@@ -110,8 +114,10 @@ Im Projekt unter **Planung → Kleinen Projektschritt anlegen** genauso vorgehen
 1. **Kalender → Termin anlegen** öffnen. Einen Titel, die Art und den ersten Termin eingeben.
 2. Für die Müllabfuhr die Wiederholung auswählen und als **Abstand in Wochen** beispielsweise **2** oder **4** eintragen. Ein Enddatum ist optional.
 3. Die gewünschten Personen, den Vorlauf und die Uhrzeit für Erinnerungen wählen. Voreingestellt sind beide Profile und der Vortag um 18 Uhr deutscher Zeit. Die Erinnerung lässt sich pro Serie abschalten.
-4. Einzelne Termine in der Monatsliste **Verschieben**, **Auslassen** oder **Abhaken**. Über **Termine und Serien verwalten** bearbeitet ihr die Serie. Fällige offene Erinnerungen bleiben im Kalender sichtbar.
+4. In der Monatsliste könnt ihr einzelne Termine **Verschieben**, **Auslassen** oder **Abhaken**. Unter **Termine und Serien verwalten → Eintrag bearbeiten** ändert ihr die Terminregel. Bei einem einmaligen Termin ersetzt ein neues Datum den bisherigen Termin, auch wenn ihr ihn zuvor verschoben habt. Die Erinnerung richtet sich nach dem neuen Datum.
 5. Für Seife oder Küchenpapier unter **Einkauf → Nachkauferinnerung für Haushaltsbedarf anlegen** das Intervall einstellen. Wenn etwas fehlt, beim betreffenden Termin **Auf die Einkaufsliste** wählen. Beide Geräte sehen denselben Einkaufsartikel. Wenn noch genug im Haus ist, genügt **Abhaken**.
+
+Fällige offene Erinnerungen bleiben im Kalender sichtbar.
 
 ### Handy-Erinnerungen auf einem eingerichteten iPhone aktivieren
 
